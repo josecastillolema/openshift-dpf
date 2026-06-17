@@ -1,15 +1,17 @@
 approvers:
+- eelgaev
+- josecastillolema
+- linoyaslan
+- SharonBX
 - szigmon
 - tsorya
 - wabouhamad
-- SharonBX
-- eelgaev
-- linoyaslan
 options: {}
 reviewers:
+- eelgaev
+- josecastillolema
+- linoyaslan
+- SharonBX
 - szigmon
 - tsorya
 - wabouhamad
-- SharonBX
-- eelgaev
-- linoyaslan

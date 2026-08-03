@@ -164,6 +164,27 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
     HOST_CLUSTER_API=${HOST_CLUSTER_API:-"api.$CLUSTER_NAME.$BASE_DOMAIN"}
     HOSTED_CONTROL_PLANE_NAMESPACE=${HOSTED_CONTROL_PLANE_NAMESPACE:-"${CLUSTERS_NAMESPACE}-${HOSTED_CLUSTER_NAME}"}
 
+    # When PAYLOAD_URL is set (e.g. by Prow), derive OPENSHIFT_VERSION and
+    # OCP_RELEASE_IMAGE from the release payload instead of using .env defaults.
+    if [ -n "${PAYLOAD_URL:-}" ] && command -v oc &>/dev/null; then
+        _release_info=$(oc adm release info "$PAYLOAD_URL" 2>/dev/null || true)
+        if [ -n "$_release_info" ]; then
+            _payload_version=$(echo "$_release_info" | awk '/^Name:/{print $2}')
+            _payload_image=$(echo "$_release_info" | awk '/^Pull From:/{print $3}')
+            if [ -n "$_payload_version" ] && [ -n "$_payload_image" ]; then
+                OPENSHIFT_VERSION="$_payload_version"
+                OCP_RELEASE_IMAGE="$_payload_image"
+                echo "PAYLOAD_URL set — resolved OPENSHIFT_VERSION=${OPENSHIFT_VERSION}, OCP_RELEASE_IMAGE=${OCP_RELEASE_IMAGE}"
+            else
+                echo "Warning: PAYLOAD_URL set but could not parse version/image from release info" >&2
+            fi
+            unset _payload_version _payload_image _release_info
+        else
+            echo "Warning: PAYLOAD_URL set but 'oc adm release info' failed for ${PAYLOAD_URL}" >&2
+            unset _release_info
+        fi
+    fi
+
     # OLM Catalog Source — when OLM_WORKAROUND=true, use the previous OCP
     # minor version's catalog (e.g. 4.20→4.19, 4.22→4.21).
     CATALOG_SOURCE_NAME=${CATALOG_SOURCE_NAME:-"redhat-operators"}

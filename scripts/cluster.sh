@@ -283,6 +283,11 @@ function check_create_cluster() {
         
         ensure_ssh_key_in_home || return 1
         
+        local release_image_args=()
+        if [ -n "${PAYLOAD_URL:-}" ]; then
+            release_image_args=(-P ocp_release_image="${OCP_RELEASE_IMAGE}")
+        fi
+
         if [ "$VM_COUNT" -eq 1 ]; then
             log "INFO" "Creating single-node cluster..."
             aicli create cluster \

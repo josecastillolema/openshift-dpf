@@ -95,11 +95,6 @@ tft:
         #   - measure_cpu      : Measure CPU usage during test
         #   - measure_power    : Measure power consumption
         #   - validate_offload : Verify OvS hardware offload (requires DPU mode)
-        # EgressIP Configuration (for test case 68 - POD_TO_EXTERNAL_EGRESS)
-        egress_ip:
-          ip: "__TFT_EGRESS_IP__"
-          node: "__TFT_SERVER_NODE__"
-
         plugins:
           - ping_mgmt_port
 
@@ -114,6 +109,27 @@ tft:
         # Resource name for SR-IOV pods (resource limits/requests).
         # Auto-detected from secondary_network_nad if not set.
         # resource_name: ""
+
+  # EgressIP Test (test case 68 - POD_TO_EXTERNAL_EGRESS)
+  # Separate entry to avoid egress_ip config affecting other test cases.
+  - name: "DPF EgressIP Test"
+    namespace: "default"
+    test_cases: "68"
+    duration: "__TFT_DURATION__"
+    connections:
+      - name: "Connection_EgressIP"
+        type: "__TFT_CONNECTION_TYPE__"
+        instances: 1
+        egress_ip:
+          ip: "__TFT_EGRESS_IP__"
+          node: "__TFT_SERVER_NODE__"
+        server:
+          - name: "__TFT_SERVER_NODE__"
+            persistent: "false"
+        client:
+          - name: "__TFT_CLIENT_NODE__"
+        plugins:
+          - ping_mgmt_port
 
 # Kubeconfig Files
 # ----------------

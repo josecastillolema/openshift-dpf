@@ -38,7 +38,7 @@ TFT_CONFIG_TEMPLATE="${SCRIPT_DIR}/../ci/tft-config.yaml.template"
 TFT_CONFIG_OUTPUT="${TFT_WORK_DIR}/tft-config.yaml"
 
 # Test Parameters (can be overridden via environment)
-TFT_TEST_CASES="${TFT_TEST_CASES:-1-25,68,69}"
+TFT_TEST_CASES="${TFT_TEST_CASES:-1-25,69}"
 TFT_DURATION="${TFT_DURATION:-10}"
 TFT_CONNECTION_TYPE="${TFT_CONNECTION_TYPE:-iperf-tcp}"
 TFT_EGRESS_IP="${TFT_EGRESS_IP:-10.6.135.100}"
@@ -455,7 +455,7 @@ case "${1:-}" in
         echo "Environment Variables:"
         echo "  TFT_REPO_URL        - Repository URL (default: https://github.com/ovn-kubernetes/kubernetes-traffic-flow-tests.git)"
         echo "  TFT_REPO_REV        - Git revision to checkout (default: main)"
-        echo "  TFT_TEST_CASES      - Test cases to run (default: 1-25,68,69)"
+        echo "  TFT_TEST_CASES      - Test cases to run (default: 1-25,69)"
         echo "  TFT_DURATION        - Duration per test in seconds (default: 10)"
         echo "  TFT_CONNECTION_TYPE - Connection type: iperf-tcp, iperf-udp, etc. (default: iperf-tcp)"
         echo "  TFT_EGRESS_IP       - EgressIP for test case 68 (default: 10.6.135.100)"

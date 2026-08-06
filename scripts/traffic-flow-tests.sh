@@ -38,7 +38,7 @@ TFT_CONFIG_TEMPLATE="${SCRIPT_DIR}/../ci/tft-config.yaml.template"
 TFT_CONFIG_OUTPUT="${TFT_WORK_DIR}/tft-config.yaml"
 
 # Test Parameters (can be overridden via environment)
-TFT_TEST_CASES="${TFT_TEST_CASES:-1-25,69}"
+TFT_TEST_CASES="${TFT_TEST_CASES:-1-25,68,69}"
 TFT_DURATION="${TFT_DURATION:-10}"
 TFT_CONNECTION_TYPE="${TFT_CONNECTION_TYPE:-iperf-tcp}"
 TFT_EGRESS_IP="${TFT_EGRESS_IP:-10.6.135.100}"
@@ -210,15 +210,28 @@ generate_config() {
     
     # Process template
     cp "${TFT_CONFIG_TEMPLATE}" "${TFT_CONFIG_OUTPUT}"
-    
+
+    # Handle EgressIP test (case 68) — runs in a separate tft entry
+    local main_test_cases="${TFT_TEST_CASES}"
+    if echo ",${TFT_TEST_CASES}," | grep -q ',68,'; then
+        # Strip 68 from main entry (it has its own tft block with egress_ip config)
+        main_test_cases=$(echo "${TFT_TEST_CASES}" | sed -E 's/,68(,|$)/\1/; s/^68,//; s/^68$//')
+        log "INFO" "EgressIP test (case 68) enabled with IP ${TFT_EGRESS_IP}"
+    else
+        # Remove the entire EgressIP tft block
+        sed -i '/__TFT_EGRESS_BLOCK_START__/,/__TFT_EGRESS_BLOCK_END__/d' "${TFT_CONFIG_OUTPUT}"
+    fi
+
     # Replace placeholders
-    sed -i "s|__TFT_TEST_CASES__|${TFT_TEST_CASES}|g" "${TFT_CONFIG_OUTPUT}"
+    sed -i "s|__TFT_TEST_CASES__|${main_test_cases}|g" "${TFT_CONFIG_OUTPUT}"
     sed -i "s|__TFT_DURATION__|${TFT_DURATION}|g" "${TFT_CONFIG_OUTPUT}"
     sed -i "s|__TFT_CONNECTION_TYPE__|${TFT_CONNECTION_TYPE}|g" "${TFT_CONFIG_OUTPUT}"
     sed -i "s|__TFT_EGRESS_IP__|${TFT_EGRESS_IP}|g" "${TFT_CONFIG_OUTPUT}"
     sed -i "s|__TFT_SERVER_NODE__|${TFT_SERVER_NODE}|g" "${TFT_CONFIG_OUTPUT}"
     sed -i "s|__TFT_CLIENT_NODE__|${TFT_CLIENT_NODE}|g" "${TFT_CONFIG_OUTPUT}"
     sed -i "s|__TFT_KUBECONFIG__|${kubeconfig_path}|g" "${TFT_CONFIG_OUTPUT}"
+    # Clean up block markers
+    sed -i '/__TFT_EGRESS_BLOCK_/d' "${TFT_CONFIG_OUTPUT}"
     
     log "INFO" "Configuration generated: ${TFT_CONFIG_OUTPUT}"
 }
@@ -455,7 +468,7 @@ case "${1:-}" in
         echo "Environment Variables:"
         echo "  TFT_REPO_URL        - Repository URL (default: https://github.com/ovn-kubernetes/kubernetes-traffic-flow-tests.git)"
         echo "  TFT_REPO_REV        - Git revision to checkout (default: main)"
-        echo "  TFT_TEST_CASES      - Test cases to run (default: 1-25,69)"
+        echo "  TFT_TEST_CASES      - Test cases to run (default: 1-25,68,69)"
         echo "  TFT_DURATION        - Duration per test in seconds (default: 10)"
         echo "  TFT_CONNECTION_TYPE - Connection type: iperf-tcp, iperf-udp, etc. (default: iperf-tcp)"
         echo "  TFT_EGRESS_IP       - EgressIP for test case 68 (default: 10.6.135.100)"

@@ -110,6 +110,7 @@ tft:
         # Auto-detected from secondary_network_nad if not set.
         # resource_name: ""
 
+  # __TFT_EGRESS_BLOCK_START__
   # EgressIP Test (test case 68 - POD_TO_EXTERNAL_EGRESS)
   # Separate entry to avoid egress_ip config affecting other test cases.
   - name: "DPF EgressIP Test"
@@ -130,6 +131,7 @@ tft:
           - name: "__TFT_CLIENT_NODE__"
         plugins:
           - ping_mgmt_port
+  # __TFT_EGRESS_BLOCK_END__
 
 # Kubeconfig Files
 # ----------------

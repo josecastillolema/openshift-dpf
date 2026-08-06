@@ -571,7 +571,7 @@ help:
 	@echo "Traffic Flow Tests Configuration:"
 	@echo "  TFT_REPO_URL         - TFT git repository URL"
 	@echo "  TFT_REPO_REV         - Git revision/branch/tag to checkout (default: main)"
-	@echo "  TFT_TEST_CASES       - Test cases to run (default: 1-25,69)"
+	@echo "  TFT_TEST_CASES       - Test cases to run (default: 1-25,68,69)"
 	@echo "  TFT_DURATION         - Duration per test in seconds (default: 10)"
 	@echo "  TFT_CONNECTION_TYPE  - Test type: iperf-tcp, iperf-udp, etc. (default: iperf-tcp)"
 	@echo "  TFT_EGRESS_IP        - EgressIP for test case 68 (default: 10.6.135.100)"

@@ -42,6 +42,7 @@ tft:
     #   27 - POD_TO_POD_2ND_INTERFACE_SAME_NODE
     #   28 - POD_TO_POD_2ND_INTERFACE_DIFF_NODE
     #   29 - POD_TO_POD_MULTI_NETWORK_POLICY
+    #   68 - POD_TO_EXTERNAL_EGRESS
     #   69 - HOST_TO_POD_NP_NS_SELECTOR_ALLOW
     #
     test_cases: "__TFT_TEST_CASES__"
@@ -94,6 +95,11 @@ tft:
         #   - measure_cpu      : Measure CPU usage during test
         #   - measure_power    : Measure power consumption
         #   - validate_offload : Verify OvS hardware offload (requires DPU mode)
+        # EgressIP Configuration (for test case 68 - POD_TO_EXTERNAL_EGRESS)
+        egress_ip:
+          ip: "__TFT_EGRESS_IP__"
+          node: "__TFT_SERVER_NODE__"
+
         plugins:
           - ping_mgmt_port
 

@@ -262,9 +262,33 @@ EOF
     _generate_nmstate_dhcp_entries "$STATIC_NET_FILE" "$VM_COUNT" "$VM_PREFIX" 0
 }
 
+function deploy_onprem_ai() {
+    if podman pod exists assisted-installer 2>/dev/null; then
+        log "INFO" "On-prem Assisted Installer already running"
+        return 0
+    fi
+    log "INFO" "Deploying on-prem Assisted Installer with release image ${OCP_RELEASE_IMAGE}..."
+    aicli create onprem -P ocp_release_image="${OCP_RELEASE_IMAGE}"
+    log "INFO" "Waiting for on-prem Assisted Installer to be ready..."
+    local retries=0
+    while ! curl -sf http://127.0.0.1:8090/api/assisted-install/v2/openshift-versions >/dev/null 2>&1; do
+        retries=$((retries + 1))
+        if [ "$retries" -ge 30 ]; then
+            log "ERROR" "On-prem Assisted Installer did not become ready"
+            return 1
+        fi
+        sleep 2
+    done
+    log "INFO" "On-prem Assisted Installer is ready"
+}
+
 function check_create_cluster() {
     log "INFO" "Checking if cluster ${CLUSTER_NAME} exists..."
-    
+
+    if [ -n "${PAYLOAD_URL:-}" ]; then
+        deploy_onprem_ai
+    fi
+
     # First check if cluster is already installed
     if check_cluster_installed; then
         log "INFO" "Cluster is already installed, skipping creation"
@@ -280,13 +304,8 @@ function check_create_cluster() {
 
     if ! aicli info cluster ${CLUSTER_NAME} >/dev/null 2>&1; then
         log "INFO" "Cluster ${CLUSTER_NAME} not found, creating... (arch=${ARCH}, cpu_architecture=$(arch_for_aicli "$ARCH"))"
-        
+
         ensure_ssh_key_in_home || return 1
-        
-        local release_image_args=()
-        if [ -n "${PAYLOAD_URL:-}" ]; then
-            release_image_args=(-P ocp_release_image="${OCP_RELEASE_IMAGE}")
-        fi
 
         if [ "$VM_COUNT" -eq 1 ]; then
             log "INFO" "Creating single-node cluster..."
@@ -316,7 +335,7 @@ function check_create_cluster() {
                 "${paramfile_args[@]}" \
                 "${CLUSTER_NAME}"
         fi
-        
+
         log "INFO" "Cluster ${CLUSTER_NAME} created successfully"
     else
         log "INFO" "Cluster ${CLUSTER_NAME} already exists"

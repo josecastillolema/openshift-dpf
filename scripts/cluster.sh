@@ -267,8 +267,8 @@ function deploy_onprem_ai() {
         log "INFO" "On-prem Assisted Installer already running"
         return 0
     fi
-    log "INFO" "Deploying on-prem Assisted Installer with release image ${OCP_RELEASE_IMAGE}..."
-    aicli create onprem -P ocp_release_image="${OCP_RELEASE_IMAGE}"
+    log "INFO" "Deploying on-prem Assisted Installer with release image ${PAYLOAD_URL}..."
+    aicli create onprem -P ocp_release_image="${PAYLOAD_URL}"
     log "INFO" "Waiting for on-prem Assisted Installer to be ready..."
     local retries=0
     while ! curl -sf http://127.0.0.1:8090/api/assisted-install/v2/openshift-versions >/dev/null 2>&1; do

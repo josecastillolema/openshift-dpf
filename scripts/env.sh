@@ -168,24 +168,28 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
 
     # When PAYLOAD_URL is set (e.g. by Prow), derive OPENSHIFT_VERSION and
     # OCP_RELEASE_IMAGE from the release payload instead of using .env defaults.
-    if [ -n "${PAYLOAD_URL:-}" ] && command -v oc &>/dev/null; then
-        _release_info=$(oc adm release info "$PAYLOAD_URL" 2>/dev/null || true)
-        if [ -n "$_release_info" ]; then
-            _payload_version=$(echo "$_release_info" | awk '/^Name:/{print $2}')
-            _payload_image=$(echo "$_release_info" | awk '/^Pull From:/{print $3}')
-            if [ -n "$_payload_version" ] && [ -n "$_payload_image" ]; then
-                OPENSHIFT_VERSION="$_payload_version"
-                OCP_RELEASE_IMAGE="$_payload_image"
-                echo "PAYLOAD_URL set — resolved OPENSHIFT_VERSION=${OPENSHIFT_VERSION}, OCP_RELEASE_IMAGE=${OCP_RELEASE_IMAGE}"
-            else
-                echo "Warning: PAYLOAD_URL set but could not parse version/image from release info" >&2
-            fi
-            unset _payload_version _payload_image _release_info
-        else
-            echo "Warning: PAYLOAD_URL set but 'oc adm release info' failed for ${PAYLOAD_URL}" >&2
-            unset _release_info
-        fi
+    if [ -n "${PAYLOAD_URL:-}" ]; then
         export AI_URL="http://127.0.0.1:8090"
+        if ! command -v oc &>/dev/null; then
+            echo "Error: PAYLOAD_URL is set but 'oc' is not available" >&2
+            exit 1
+        fi
+        _release_info=$(oc adm release info "$PAYLOAD_URL" 2>&1)
+        if [ $? -ne 0 ]; then
+            echo "Error: 'oc adm release info' failed for ${PAYLOAD_URL}:" >&2
+            echo "$_release_info" >&2
+            exit 1
+        fi
+        _payload_version=$(echo "$_release_info" | awk '/^Name:/{print $2}')
+        _payload_image=$(echo "$_release_info" | awk '/^Pull From:/{print $3}')
+        if [ -z "$_payload_version" ] || [ -z "$_payload_image" ]; then
+            echo "Error: could not parse version/image from release info for ${PAYLOAD_URL}" >&2
+            exit 1
+        fi
+        OPENSHIFT_VERSION="$_payload_version"
+        OCP_RELEASE_IMAGE="$_payload_image"
+        echo "PAYLOAD_URL set: OPENSHIFT_VERSION=${OPENSHIFT_VERSION}, OCP_RELEASE_IMAGE=${OCP_RELEASE_IMAGE}"
+        unset _payload_version _payload_image _release_info
     fi
 
     # OLM Catalog Source — when OLM_WORKAROUND=true, use the previous OCP

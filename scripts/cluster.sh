@@ -389,9 +389,9 @@ function wait_for_cluster_status() {
             sleep $sleep_time
             continue
         fi
-        # If waiting for 'ready' but status is already 'installed', treat as success
-        if [ "$status" == "ready" ] && [ "$current_status" == "installed" ]; then
-            log "INFO" "Cluster ${CLUSTER_NAME} is already installed. Skipping wait for 'ready'."
+        # If waiting for an intermediate status but cluster is already installed, skip
+        if [ "$current_status" == "installed" ] && [ "$status" != "installed" ]; then
+            log "INFO" "Cluster ${CLUSTER_NAME} is already installed. Skipping wait for '${status}'."
             return 0
         fi
         # 'adding-hosts' implies the cluster is installed and accepting new nodes

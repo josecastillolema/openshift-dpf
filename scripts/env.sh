@@ -181,15 +181,14 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
             exit 1
         fi
         _payload_version=$(echo "$_release_info" | awk '/^Name:/{print $2}')
-        _payload_image=$(echo "$_release_info" | awk '/^Pull From:/{print $3}')
-        if [ -z "$_payload_version" ] || [ -z "$_payload_image" ]; then
-            echo "Error: could not parse version/image from release info for ${PAYLOAD_URL}" >&2
+        if [ -z "$_payload_version" ]; then
+            echo "Error: could not parse version from release info for ${PAYLOAD_URL}" >&2
             exit 1
         fi
         OPENSHIFT_VERSION="$_payload_version"
-        OCP_RELEASE_IMAGE="$_payload_image"
+        OCP_RELEASE_IMAGE="quay.io/openshift-release-dev/ocp-release:${_payload_version}-multi"
         echo "PAYLOAD_URL set: OPENSHIFT_VERSION=${OPENSHIFT_VERSION}, OCP_RELEASE_IMAGE=${OCP_RELEASE_IMAGE}"
-        unset _payload_version _payload_image _release_info
+        unset _payload_version _release_info
     fi
 
     # OLM Catalog Source — when OLM_WORKAROUND=true, use the previous OCP

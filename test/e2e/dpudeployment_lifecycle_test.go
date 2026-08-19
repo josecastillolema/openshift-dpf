@@ -63,23 +63,7 @@ var _ = Describe("TC-DPUD-001: Delete and Recreate DPUDeployment", Label("dpudep
 	})
 
 	It("should delete the DPUDeployment", func() {
-		dpuDeployment := &dpuservicev1.DPUDeployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace: cfg.DPFNamespace,
-				Name:      cfg.DPUDeploymentName,
-			},
-		}
-		Expect(mgmtClient.Delete(ctx, dpuDeployment)).To(Succeed(),
-			"Failed to delete DPUDeployment")
-
-		By("Waiting for DPUDeployment to be fully removed")
-		Eventually(func(g Gomega) {
-			err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(dpuDeployment), dpuDeployment)
-			g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
-				"DPUDeployment should be fully deleted, got: %v", err)
-		}).WithTimeout(10 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
-
-		GinkgoWriter.Printf("DPUDeployment %s deleted successfully\n", cfg.DPUDeploymentName)
+		deleteDPUDeploymentAndWait()
 	})
 
 	It("should delete the ignition ConfigMap after DPUDeployment removal", func() {
@@ -100,21 +84,7 @@ var _ = Describe("TC-DPUD-001: Delete and Recreate DPUDeployment", Label("dpudep
 	})
 
 	It("should recreate the DPUDeployment", func() {
-		Expect(dpuDeploymentBackup).NotTo(BeNil(), "DPUDeployment backup should have been captured")
-
-		newDeployment := &dpuservicev1.DPUDeployment{
-			ObjectMeta: metav1.ObjectMeta{
-				Namespace:   dpuDeploymentBackup.Namespace,
-				Name:        dpuDeploymentBackup.Name,
-				Labels:      dpuDeploymentBackup.Labels,
-				Annotations: dpuDeploymentBackup.Annotations,
-			},
-			Spec: dpuDeploymentBackup.Spec,
-		}
-
-		Expect(mgmtClient.Create(ctx, newDeployment)).To(Succeed(),
-			"Failed to recreate DPUDeployment")
-		GinkgoWriter.Printf("DPUDeployment %s recreated\n", newDeployment.Name)
+		recreateDPUDeploymentFromBackup(dpuDeploymentBackup)
 	})
 
 	It("should reach Ready state after recreation", func() {

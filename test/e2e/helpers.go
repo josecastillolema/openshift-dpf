@@ -3,9 +3,17 @@ package e2e
 import (
 	"context"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
+	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+
+	dpuservicev1 "github.com/nvidia/doca-platform/api/dpuservice/v1alpha1"
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -13,6 +21,14 @@ import (
 
 	"github.com/openshift-dpf/test/utils"
 )
+
+const (
+	ovnNodeComponentLabel      = "app.kubernetes.io/component"
+	ovnNodeComponentLabelValue = "ovnkube-node"
+)
+
+// mtuLineRegexp matches the "mtu <N>" token in `ip link show` output.
+var mtuLineRegexp = regexp.MustCompile(`\bmtu\s+(\d+)\b`)
 
 // isReady reports whether the given conditions slice contains a Ready=True condition.
 func isReady(conditions []metav1.Condition) bool {
@@ -109,4 +125,97 @@ func discoverWorkloadPods(ctx context.Context, c client.Client, namespace string
 	}
 
 	return result, nil
+}
+
+// findOVNNodePodOnNode returns a ready OVN node pod scheduled on nodeName.
+func findOVNNodePodOnNode(nodeName string) (*corev1.Pod, error) {
+	podList := &corev1.PodList{}
+	if err := hostedClient.List(ctx, podList,
+		client.InNamespace(cfg.DPFNamespace),
+		client.MatchingLabels{ovnNodeComponentLabel: ovnNodeComponentLabelValue},
+	); err != nil {
+		return nil, fmt.Errorf("listing OVN node pods in %s: %w", cfg.DPFNamespace, err)
+	}
+	for i := range podList.Items {
+		if podList.Items[i].Spec.NodeName == nodeName &&
+			len(ovnKPodReadinessProblems(&podList.Items[i])) == 0 {
+			return &podList.Items[i], nil
+		}
+	}
+	return nil, nil
+}
+
+// getInterfaceMTU executes `ip link show <iface>` in a pod container and
+// parses the reported MTU.
+func getInterfaceMTU(ctx context.Context, restCfg *rest.Config, cs *kubernetes.Clientset, namespace, podName, containerName, iface string) (int, error) {
+	result, err := utils.ExecInPod(ctx, restCfg, cs, namespace, podName, containerName, []string{
+		"ip", "link", "show", iface,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("getting %s MTU on pod %s: %w", iface, podName, err)
+	}
+
+	match := mtuLineRegexp.FindStringSubmatch(result.Stdout)
+	if match == nil {
+		return 0, fmt.Errorf("could not parse MTU for interface %s on pod %s from output: %s", iface, podName, result.Stdout)
+	}
+	mtu, err := strconv.Atoi(match[1])
+	if err != nil {
+		return 0, fmt.Errorf("parsing MTU value %q for interface %s: %w", match[1], iface, err)
+	}
+	return mtu, nil
+}
+
+// deleteDPUDeploymentAndWait deletes the configured DPUDeployment and waits
+// for it to be fully removed.
+func deleteDPUDeploymentAndWait() {
+	dpuDeployment := &dpuservicev1.DPUDeployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace: cfg.DPFNamespace,
+			Name:      cfg.DPUDeploymentName,
+		},
+	}
+	err := mgmtClient.Delete(ctx, dpuDeployment)
+	Expect(client.IgnoreNotFound(err)).To(Succeed(), "failed to delete DPUDeployment")
+
+	By("Waiting for DPUDeployment to be fully removed")
+	Eventually(func(g Gomega) {
+		err := mgmtClient.Get(ctx, client.ObjectKeyFromObject(dpuDeployment), dpuDeployment)
+		g.Expect(apierrors.IsNotFound(err)).To(BeTrue(),
+			"DPUDeployment should be fully deleted, got: %v", err)
+	}).WithTimeout(10 * time.Minute).WithPolling(5 * time.Second).Should(Succeed())
+
+	GinkgoWriter.Printf("DPUDeployment %s deleted successfully\n", cfg.DPUDeploymentName)
+}
+
+// recreateDPUDeploymentFromBackup creates a new DPUDeployment using the
+// ObjectMeta and Spec captured from a previous deployment.
+func recreateDPUDeploymentFromBackup(backup *dpuservicev1.DPUDeployment) {
+	Expect(backup).NotTo(BeNil(), "DPUDeployment backup should have been captured")
+
+	newDeployment := &dpuservicev1.DPUDeployment{
+		ObjectMeta: metav1.ObjectMeta{
+			Namespace:   backup.Namespace,
+			Name:        backup.Name,
+			Labels:      backup.Labels,
+			Annotations: backup.Annotations,
+		},
+		Spec: backup.Spec,
+	}
+
+	Expect(mgmtClient.Create(ctx, newDeployment)).To(Succeed(),
+		"failed to recreate DPUDeployment")
+	GinkgoWriter.Printf("DPUDeployment %s recreated\n", newDeployment.Name)
+}
+
+// restoreDPUDeploymentFromBackup deletes the current DPUDeployment and
+// recreates the captured object. This must happen after restoring
+// DPFOperatorConfig.spec.networking.controlPlaneMTU so the operator
+// provisions bridges with the restored value.
+func restoreDPUDeploymentFromBackup(backup *dpuservicev1.DPUDeployment) {
+	if backup == nil {
+		return
+	}
+	deleteDPUDeploymentAndWait()
+	recreateDPUDeploymentFromBackup(backup)
 }

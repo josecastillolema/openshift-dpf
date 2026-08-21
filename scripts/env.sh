@@ -174,8 +174,7 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
             echo "Error: PAYLOAD_URL is set but 'oc' is not available" >&2
             exit 1
         fi
-        _release_info=$(oc adm release info "$PAYLOAD_URL" 2>&1)
-        if [ $? -ne 0 ]; then
+        if ! _release_info=$(oc adm release info "$PAYLOAD_URL" 2>&1); then
             echo "Error: 'oc adm release info' failed for ${PAYLOAD_URL}:" >&2
             echo "$_release_info" >&2
             exit 1
@@ -186,8 +185,14 @@ if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
             exit 1
         fi
         OPENSHIFT_VERSION="$_payload_version"
-        OCP_RELEASE_IMAGE="quay.io/openshift-release-dev/ocp-release:${_payload_version}-multi"
+        _multi_image="quay.io/openshift-release-dev/ocp-release:${_payload_version}-multi"
+        if ! oc adm release info "$_multi_image" &>/dev/null; then
+            echo "Error: multi-arch release image not found: ${_multi_image}" >&2
+            exit 1
+        fi
+        OCP_RELEASE_IMAGE="$_multi_image"
         echo "PAYLOAD_URL set: OPENSHIFT_VERSION=${OPENSHIFT_VERSION}, OCP_RELEASE_IMAGE=${OCP_RELEASE_IMAGE}"
+        unset _multi_image
         unset _payload_version _release_info
     fi
 

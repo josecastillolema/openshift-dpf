@@ -271,7 +271,7 @@ function deploy_onprem_ai() {
         log "INFO" "On-prem Assisted Installer pod exists but is not running, removing..."
         podman pod rm -f assisted-installer
     fi
-    log "INFO" "Using aicli from: $(which aicli), version: $(aicli --version 2>&1 || true)"
+    log "INFO" "Using aicli from: $(which aicli)"
     log "INFO" "Deploying on-prem Assisted Installer with release image ${PAYLOAD_URL}..."
     local _short_version="${OPENSHIFT_VERSION%.*}"
     aicli create onprem \

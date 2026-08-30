@@ -271,8 +271,14 @@ function deploy_onprem_ai() {
         log "INFO" "On-prem Assisted Installer pod exists but is not running, removing..."
         podman pod rm -f assisted-installer
     fi
+    log "INFO" "Using aicli from: $(which aicli), version: $(aicli --version 2>&1 || true)"
     log "INFO" "Deploying on-prem Assisted Installer with release image ${PAYLOAD_URL}..."
-    aicli create onprem -P ocp_release_image="${PAYLOAD_URL}"
+    local _short_version="${OPENSHIFT_VERSION%.*}"
+    aicli create onprem \
+        -P ocp_release_image="${PAYLOAD_URL}" \
+        -P openshift_version="${_short_version}" \
+        -P version_long="${OPENSHIFT_VERSION}" \
+        -P installer_registry="registry.redhat.io"
     log "INFO" "Waiting for on-prem Assisted Installer to be ready..."
     local retries=0
     while ! curl -sf http://127.0.0.1:8090/api/assisted-install/v2/openshift-versions >/dev/null 2>&1; do

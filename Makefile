@@ -275,7 +275,6 @@ install-helm:
 .PHONY: run-dpf-sanity
 run-dpf-sanity:
 	@echo "Running $(SANITY_CHECKS_SCRIPT) ..."
-	@chmod +x $(SANITY_CHECKS_SCRIPT)
 	@$(SANITY_CHECKS_SCRIPT)
 
 # E2E Tests (library-import based, runs against pre-existing deployment)

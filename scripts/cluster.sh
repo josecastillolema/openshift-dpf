@@ -264,8 +264,12 @@ EOF
 
 function deploy_onprem_ai() {
     if podman pod exists assisted-installer 2>/dev/null; then
-        log "INFO" "On-prem Assisted Installer already running"
-        return 0
+        if [ "$(podman pod inspect assisted-installer --format '{{.State}}' 2>/dev/null)" = "Running" ]; then
+            log "INFO" "On-prem Assisted Installer already running"
+            return 0
+        fi
+        log "INFO" "On-prem Assisted Installer pod exists but is not running, removing..."
+        podman pod rm -f assisted-installer
     fi
     log "INFO" "Deploying on-prem Assisted Installer with release image ${PAYLOAD_URL}..."
     aicli create onprem -P ocp_release_image="${PAYLOAD_URL}"

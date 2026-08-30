@@ -327,7 +327,7 @@ function deploy_hypershift() {
     else
         log [INFO] "Installing latest hypershift operator"
         install_hypershift
-        wait_for_pods "hypershift" "app=operator" 30 5
+        wait_for_pods "hypershift" "app=operator" 60 10
     fi
 
     # Step 4: Deploy MetalLB operator if HYPERSHIFT_API_IP is configured (multi-node clusters only)

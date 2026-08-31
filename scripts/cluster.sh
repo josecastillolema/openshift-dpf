@@ -274,7 +274,7 @@ function deploy_onprem_ai() {
         -P ocp_release_image="${PAYLOAD_URL}" \
         -P openshift_version="${_short_version}" \
         -P version_long="${OPENSHIFT_VERSION}" \
-        -P installer_registry="registry.redhat.io"
+        -P installer_registry="quay.io"
     log "INFO" "Waiting for on-prem Assisted Installer API to be ready..."
     local retries=0
     while ! curl -sf http://127.0.0.1:8090/api/assisted-install/v2/openshift-versions >/dev/null 2>&1; do

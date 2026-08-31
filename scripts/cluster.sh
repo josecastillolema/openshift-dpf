@@ -358,9 +358,7 @@ function check_create_cluster() {
     fi
 }
 
-function delete_cluster() {
-    log "INFO" "Deleting cluster ${CLUSTER_NAME}..."
-
+function _delete_cluster_from_ai() {
     for infraenv_name in \
         "${CLUSTER_NAME}_infra-env" \
         "${CLUSTER_NAME}_infra-env_alt_$(get_alt_arch "$ARCH")"; do
@@ -388,6 +386,24 @@ function delete_cluster() {
     else
         log "INFO" "Cluster ${CLUSTER_NAME} deleted successfully"
     fi
+}
+
+function delete_cluster() {
+    log "INFO" "Deleting cluster ${CLUSTER_NAME}..."
+
+    # Try deleting from on-prem AI if it's running (previous deploy may have used it)
+    if podman pod exists assisted-installer 2>/dev/null; then
+        if curl -sf http://127.0.0.1:8090/api/assisted-install/v2/clusters >/dev/null 2>&1; then
+            log "INFO" "On-prem Assisted Installer is running, deleting cluster from it..."
+            AI_URL=http://127.0.0.1:8090 _delete_cluster_from_ai
+        fi
+        log "INFO" "Removing on-prem Assisted Installer pod..."
+        podman pod rm -f assisted-installer || true
+    fi
+
+    # Try deleting from console (previous deploy may have used it)
+    log "INFO" "Deleting cluster from Assisted Installer console..."
+    (unset AI_URL; _delete_cluster_from_ai)
 }
 
 function wait_for_cluster_status() {

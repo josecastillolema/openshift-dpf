@@ -264,11 +264,7 @@ EOF
 
 function deploy_onprem_ai() {
     if podman pod exists assisted-installer 2>/dev/null; then
-        if [ "$(podman pod inspect assisted-installer --format '{{.State}}' 2>/dev/null)" = "Running" ]; then
-            log "INFO" "On-prem Assisted Installer already running"
-            return 0
-        fi
-        log "INFO" "On-prem Assisted Installer pod exists but is not running, removing..."
+        log "INFO" "Removing previous on-prem Assisted Installer pod..."
         podman pod rm -f assisted-installer
     fi
     log "INFO" "Using aicli from: $(which aicli)"

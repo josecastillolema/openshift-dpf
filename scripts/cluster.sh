@@ -277,7 +277,7 @@ function deploy_onprem_ai() {
         -P installer_registry="quay.io"
     log "INFO" "Waiting for on-prem Assisted Installer API to be ready..."
     local retries=0
-    while ! curl -sf http://127.0.0.1:8090/api/assisted-install/v2/openshift-versions >/dev/null 2>&1; do
+    while ! curl -sf --connect-timeout 3 --max-time 5 http://127.0.0.1:8090/api/assisted-install/v2/openshift-versions >/dev/null 2>&1; do
         retries=$((retries + 1))
         if [ "$retries" -ge 30 ]; then
             log "ERROR" "On-prem Assisted Installer API did not become ready"
@@ -287,7 +287,7 @@ function deploy_onprem_ai() {
     done
     log "INFO" "On-prem Assisted Installer API is ready"
     retries=0
-    while ! curl -sf http://127.0.0.1:8888/health >/dev/null 2>&1; do
+    while ! curl -sf --connect-timeout 3 --max-time 5 http://127.0.0.1:8888/health >/dev/null 2>&1; do
         retries=$((retries + 1))
         if [ "$retries" -ge 30 ]; then
             log "ERROR" "On-prem Assisted Installer image service did not become ready"

@@ -411,13 +411,23 @@ check_hbn_bgp_neighbors() {
     if [ -z "$bgp_out" ]; then
       echo -e "${RED}Fail${NC} HBN BGP: no neighbors on ${pod}"
       bgp_result=1
-    elif grep -qiw 'established' <<<"$bgp_out"; then
-      echo -e "${GREEN}Pass${NC} HBN BGP established on ${pod}"
     else
-      local states
-      states=$(awk 'NR>2 && /^[a-zA-Z]/' <<<"$bgp_out" | grep -oiE 'idle|connect|active|opensent|openconfirm' | paste -sd, -) || true
-      echo -e "${RED}Fail${NC} HBN BGP not established on ${pod} (states: ${states:-unknown})"
-      bgp_result=1
+      local all_states total_neighbors not_established
+      all_states=$(awk '/^---/{found=1; next} found && NF>2{print $3}' <<<"$bgp_out" | grep -iE 'established|idle|connect|active|opensent|openconfirm') || true
+      total_neighbors=$(echo "$all_states" | grep -c . 2>/dev/null) || true
+      not_established=$(echo "$all_states" | grep -ivw 'established' | grep -c . 2>/dev/null) || true
+
+      if [ "${total_neighbors:-0}" -eq 0 ]; then
+        echo -e "${RED}Fail${NC} HBN BGP: no neighbors parsed on ${pod}"
+        bgp_result=1
+      elif [ "${not_established}" -eq 0 ]; then
+        echo -e "${GREEN}Pass${NC} HBN BGP: all ${total_neighbors} neighbor(s) established on ${pod}"
+      else
+        local bad_states
+        bad_states=$(echo "$all_states" | grep -ivw 'established' | paste -sd, -) || true
+        echo -e "${RED}Fail${NC} HBN BGP: ${not_established}/${total_neighbors} neighbor(s) not established on ${pod} (${bad_states})"
+        bgp_result=1
+      fi
     fi
   done <<<"$hbn_pods"
 

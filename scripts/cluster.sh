@@ -269,7 +269,7 @@ function deploy_onprem_ai() {
     fi
     log "INFO" "Using aicli from: $(which aicli)"
     log "INFO" "Deploying on-prem Assisted Installer with release image ${PAYLOAD_URL}..."
-    local _short_version="${OPENSHIFT_VERSION%.*}"
+    local _short_version="${OPENSHIFT_VERSION%%.*}.$(echo "$OPENSHIFT_VERSION" | cut -d. -f2)"
     aicli create onprem \
         -P ocp_release_image="${PAYLOAD_URL}" \
         -P openshift_version="${_short_version}" \
@@ -401,7 +401,7 @@ function delete_cluster() {
         podman pod rm -f assisted-installer || true
     fi
 
-    # Try deleting from console (previous deploy may have used it)
+    # Subshell unsets AI_URL so aicli falls back to the Red Hat console
     log "INFO" "Deleting cluster from Assisted Installer console..."
     (unset AI_URL; _delete_cluster_from_ai)
 }

@@ -190,12 +190,12 @@ resolve_payload() {
         echo "Error: PAYLOAD_URL is set but 'oc' is not available" >&2
         exit 1
     fi
-    local _oc_registry_flags=""
+    local -a _oc_registry_flags=()
     if [ -f "${OPENSHIFT_PULL_SECRET:-}" ]; then
-        _oc_registry_flags="--registry-config=${OPENSHIFT_PULL_SECRET}"
+        _oc_registry_flags=(--registry-config="${OPENSHIFT_PULL_SECRET}")
     fi
     local _release_info
-    if ! _release_info=$(oc adm release info ${_oc_registry_flags} "$PAYLOAD_URL" 2>&1); then
+    if ! _release_info=$(oc adm release info "${_oc_registry_flags[@]}" "$PAYLOAD_URL" 2>&1); then
         echo "Error: 'oc adm release info' failed for ${PAYLOAD_URL}:" >&2
         echo "$_release_info" >&2
         exit 1
@@ -206,14 +206,14 @@ resolve_payload() {
         echo "Error: could not parse version from release info for ${PAYLOAD_URL}" >&2
         exit 1
     fi
-    OPENSHIFT_VERSION="$_payload_version"
+    export OPENSHIFT_VERSION="$_payload_version"
     local _multi_image="quay.io/openshift-release-dev/ocp-release:${_payload_version}-multi"
-    if oc adm release info ${_oc_registry_flags} "$_multi_image" &>/dev/null; then
-        OCP_RELEASE_IMAGE="$_multi_image"
-        echo "PAYLOAD_URL set: OPENSHIFT_VERSION=${OPENSHIFT_VERSION}, OCP_RELEASE_IMAGE=${OCP_RELEASE_IMAGE}"
+    if oc adm release info "${_oc_registry_flags[@]}" "$_multi_image" &>/dev/null; then
+        export OCP_RELEASE_IMAGE="$_multi_image"
     else
-        echo "PAYLOAD_URL set: OPENSHIFT_VERSION=${OPENSHIFT_VERSION}, OCP_RELEASE_IMAGE unchanged (no multi-arch image for ${_payload_version})"
+        export OCP_RELEASE_IMAGE="$PAYLOAD_URL"
     fi
+    echo "PAYLOAD_URL set: OPENSHIFT_VERSION=${OPENSHIFT_VERSION}, OCP_RELEASE_IMAGE=${OCP_RELEASE_IMAGE}"
 }
 
 # Load environment variables from .env file and validate aicli connectivity

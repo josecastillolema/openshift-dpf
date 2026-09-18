@@ -382,7 +382,7 @@ function _delete_cluster_from_ai() {
     done
 
     if ! aicli delete cluster ${CLUSTER_NAME} -y; then
-        log "WARNING" "Failed to delete cluster ${CLUSTER_NAME}, continuing anyway"
+        log "WARN" "Failed to delete cluster ${CLUSTER_NAME}, continuing anyway"
     else
         log "INFO" "Cluster ${CLUSTER_NAME} deleted successfully"
     fi

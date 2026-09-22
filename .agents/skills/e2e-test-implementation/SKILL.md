@@ -1,0 +1,72 @@
+---
+name: e2e-test-implementation
+description: Implement or update a DPF Go/Ginkgo end-to-end test under test/e2e using the repository's client, lifecycle, helper, and validation conventions.
+---
+
+# E2E test implementation
+
+Use this workflow when adding or changing a DPF E2E test under `test/e2e/`. It is repository-local and tool-neutral so coding agents and human contributors can use the same guidance. Do not apply it to shell deployment changes or unit-only changes unless the request also changes the E2E suite.
+
+## Discover the local contract
+
+Read these files before editing:
+
+1. The root `AGENTS.md`.
+2. `test/e2e/AGENTS.md`.
+3. `test/e2e/README.md`.
+4. The closest existing test for the same resource and operation.
+5. `test/e2e/helpers.go` and the relevant health/readiness helpers.
+
+## Reuse upstream logic first
+
+Before writing any custom assertion, polling loop, resource lookup, readiness check, or lifecycle operation, search the upstream `dpfe2e.*` package for an existing function that already implements it. Inspect the function's behavior and prerequisites, then reuse it when it covers the requested scenario. This includes `dpfe2e.Validate*`, `dpfe2e.Verify*`, wait, cleanup, and resource-discovery logic—not only functions whose names begin with `Validate` or `Verify`.
+
+Only add custom logic when no suitable `dpfe2e.*` function exists or when the test needs a narrower assertion than the upstream function provides. Keep that custom logic focused on the test's service-specific behavior, and explain the distinction in the code when it is not obvious. Preserve unrelated worktree changes and do not refactor neighboring tests unless requested.
+
+Before adding a precondition or skip, inspect the helpers already called by the test hook and trace the values they check back to suite initialization. Do not repeat a condition that an existing helper already guarantees, even if the helper checks an equivalent value through a different variable. For example, `skipIfClusterNotReadyForDPUReprovisioning()` skips when `dpuHostWorkers` is empty, and suite setup sets `dpfInput.NumberOfDPUNodes` from `len(dpuHostWorkers)`, so a second zero-DPU skip in the same `BeforeAll` is redundant. Keep independent test-specific skips, such as a missing optional configuration value, before the shared readiness helper.
+
+## Design the test
+
+Map the requested scenario to explicit preconditions, mutation, rollout verification, and cleanup. If the requested steps are ambiguous in a way that changes what should be asserted, ask for clarification rather than silently substituting a different check.
+
+For a test that changes shared cluster configuration, use an ordered Ginkgo container with this lifecycle:
+
+1. In `BeforeAll`, use the existing topology/preflight helper when it covers the required DPU topology; add a direct topology skip only when no called helper covers that condition. Run independent, test-specific configuration skips first.
+2. Assert the initial deployment, generated resources, pods, and cluster health are ready.
+3. Capture a copy of the original configuration and any resource/pod UIDs needed to prove replacement.
+4. Apply the requested update through the appropriate client.
+5. Wait with `Eventually` for a new generated resource revision to become Ready.
+6. Require new resource or pod UIDs, and verify readiness on every expected node.
+7. Verify the new settings and final cluster health.
+8. Restore the original configuration in `AfterAll`, then wait for and verify the restored revision, pod replacement, and cluster health.
+
+Make `AfterAll` idempotent: return if the original state was never captured or the current configuration already matches it. Do not make restoration depend on a final `It` block. `DeferCleanup` is acceptable for per-spec cleanup and should not be introduced into a shared-state ordered update when `AfterAll` expresses the lifecycle more clearly.
+
+## Place code correctly
+
+- Use `mgmtClient` for DPF custom resources and `hostedClient` for hosted-cluster workloads.
+- Put generic listing, UID tracking, pod readiness, and polling support in `test/e2e/helpers.go`.
+- Keep service-specific parsing, patching, and expected-value assertions beside the test that owns them.
+- Prefer existing suite helpers such as `isReady`, `waitForClusterHealth`, and `waitForOVNKPodsReady`.
+- Use resource labels and UIDs to identify generated DPUService revisions; object names alone do not prove a rollout.
+- For pod restarts, capture UIDs per node before mutation and require a new Ready pod on every expected DPU worker afterward.
+- Use `By(...)` for meaningful scenario steps and `Eventually` for asynchronous controller convergence. Avoid fixed sleeps unless an existing helper requires one.
+
+## Validate the change
+
+From `test/` run:
+
+```bash
+gofmt -d e2e/
+GOCACHE=/tmp/openshift-dpf-go-build GOTOOLCHAIN=auto go test -run '^$' ./e2e/
+GOCACHE=/tmp/openshift-dpf-go-build GOTOOLCHAIN=auto go test ./e2e/
+GOCACHE=/tmp/openshift-dpf-go-build GOTOOLCHAIN=auto go vet ./e2e/
+```
+
+From the repository root run:
+
+```bash
+git diff --check
+```
+
+Only claim live E2E validation when the test actually ran against a configured cluster. In the final report, identify the changed test/helper files, summarize the scenario-to-assertion mapping, list validation performed, and call out any unavailable live-cluster validation.

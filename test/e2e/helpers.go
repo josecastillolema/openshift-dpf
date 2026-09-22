@@ -41,6 +41,87 @@ func isReady(conditions []metav1.Condition) bool {
 	return false
 }
 
+// listDPUServiceRevisions lists the DPUService revisions generated for a
+// named service in a DPUDeployment.
+func listDPUServiceRevisions(ctx context.Context, c client.Client, namespace, deploymentName, serviceName string) ([]dpuservicev1.DPUService, error) {
+	serviceList := &dpuservicev1.DPUServiceList{}
+	err := c.List(ctx, serviceList,
+		client.InNamespace(namespace),
+		client.MatchingLabels{
+			dpuservicev1.ParentDPUDeploymentNameLabel:            namespace + "_" + deploymentName,
+			dpuservicev1.ServiceReferenceInDPUDeploymentLabelKey: serviceName,
+		})
+	if err != nil {
+		return nil, fmt.Errorf("listing DPUService revisions for %s: %w", serviceName, err)
+	}
+	return serviceList.Items, nil
+}
+
+// dpuServiceUIDs returns the UIDs of the supplied DPUService revisions.
+func dpuServiceUIDs(services []dpuservicev1.DPUService) map[types.UID]bool {
+	uids := make(map[types.UID]bool, len(services))
+	for _, service := range services {
+		uids[service.UID] = true
+	}
+	return uids
+}
+
+// podUIDsByNode groups pod UIDs by the node on which each pod is scheduled.
+func podUIDsByNode(pods []corev1.Pod) map[string]map[types.UID]bool {
+	uids := make(map[string]map[types.UID]bool)
+	for _, pod := range pods {
+		if _, ok := uids[pod.Spec.NodeName]; !ok {
+			uids[pod.Spec.NodeName] = make(map[types.UID]bool)
+		}
+		uids[pod.Spec.NodeName][pod.UID] = true
+	}
+	return uids
+}
+
+// podUIDsAbsentFromBaseline returns current pod UIDs that were not present in the
+// per-node baseline. The result can be passed to a replacement wait to track
+// only pods that appeared during an update rollout.
+func podUIDsAbsentFromBaseline(baseline, current map[string]map[types.UID]bool) map[string]map[types.UID]bool {
+	added := make(map[string]map[types.UID]bool)
+	for nodeName, currentUIDs := range current {
+		for uid := range currentUIDs {
+			if baseline[nodeName][uid] {
+				continue
+			}
+			if added[nodeName] == nil {
+				added[nodeName] = make(map[types.UID]bool)
+			}
+			added[nodeName][uid] = true
+		}
+	}
+	return added
+}
+
+// podIsReady reports whether a pod is Running, not terminating, PodReady, and
+// has no unready containers.
+func podIsReady(pod *corev1.Pod) bool {
+	if pod == nil || pod.DeletionTimestamp != nil || pod.Status.Phase != corev1.PodRunning {
+		return false
+	}
+
+	readyCondition := false
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodReady && condition.Status == corev1.ConditionTrue {
+			readyCondition = true
+			break
+		}
+	}
+	if !readyCondition || len(pod.Status.ContainerStatuses) == 0 {
+		return false
+	}
+	for _, status := range pod.Status.ContainerStatuses {
+		if !status.Ready {
+			return false
+		}
+	}
+	return true
+}
+
 // PodInfo contains a pod's name, namespace, node, and IP.
 type PodInfo struct {
 	Name      string

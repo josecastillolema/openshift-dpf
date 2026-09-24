@@ -332,7 +332,10 @@ run-dpf-sanity:
 
 # E2E Tests (library-import based, runs against pre-existing deployment)
 E2E_GO_LABEL_FILTER ?= dpudeployment-lifecycle
-E2E_GO_TIMEOUT ?= 90m
+# Allow long-running cluster provisioning and recovery checks to complete.
+E2E_GINKGO_TIMEOUT ?= 4h
+# Leave time for Ginkgo to report failures and run cleanup after its deadline.
+E2E_GO_TIMEOUT ?= 4h30m
 E2E_ENV_FILE ?= .env.test
 E2E_ENV_FILE := $(abspath $(E2E_ENV_FILE))
 
@@ -343,6 +346,7 @@ test-go-e2e:
 	@echo "================================================================================"
 	cd test && GOTOOLCHAIN=auto go test -v -count=1 -timeout $(E2E_GO_TIMEOUT) ./e2e/ \
 		-ginkgo.v \
+		-ginkgo.timeout=$(E2E_GINKGO_TIMEOUT) \
 		-ginkgo.label-filter="$(E2E_GO_LABEL_FILTER)" \
 		-env-file="$(E2E_ENV_FILE)"
 

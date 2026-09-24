@@ -2,7 +2,6 @@ package e2e
 
 import (
 	"fmt"
-	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -19,7 +18,7 @@ import (
 )
 
 // controlPlaneMTU governs the out-of-band "management network" only: the
-// host-side OOB bridge (br-dpu or br-ex) on the DPU-enabled host worker node
+// host-side OOB bridge (br-ex) on the DPU-enabled host worker node
 // (management cluster side) and its counterpart br-comm-ch bridge on the DPU
 // node (hosted cluster side). It does NOT affect the high-speed OVN-Kubernetes data path
 // (e.g. a workload pod's primary eth0 interface) -- that tracks
@@ -27,17 +26,13 @@ import (
 const (
 	ovnNodeContainerName  = "doca-ovnkube-controller"
 	dpuOOBBridgeName      = "br-comm-ch"
+	hostOOBBridgeName     = "br-ex"
 	workloadContainerName = "nginx"
 
 	// defaultControlPlaneMTU mirrors the CRD's +kubebuilder:default for
 	// Networking.ControlPlaneMTU, used when the field is unset.
 	defaultControlPlaneMTU = 1500
 )
-
-// The host-side OOB bridge is named br-dpu by the DPF deployment manifests,
-// while x86/OVN host configurations commonly expose the same network as
-// br-ex. Probe both names and use the one carrying the expected MTU.
-var hostOOBBridgeNames = []string{"br-dpu", "br-ex"}
 
 // TC-MTU-003: Change ControlplaneMTU Before DPUDeployment
 //
@@ -61,6 +56,7 @@ var _ = Describe("TC-MTU-003: Change ControlplaneMTU Before DPUDeployment", Labe
 
 	BeforeAll(func() {
 		skipIfClusterNotReadyForDPUReprovisioning()
+		dpuDeploymentBackup = getDPUDeployment().DeepCopy()
 	})
 
 	// Safety net: if a later spec fails, all following specs in this Ordered
@@ -85,19 +81,15 @@ var _ = Describe("TC-MTU-003: Change ControlplaneMTU Before DPUDeployment", Labe
 		// DPUDeployment. Recreate it after restoring the config so the
 		// original MTU is propagated to the bridges as well.
 		restoreDPUDeploymentFromBackup(dpuDeploymentBackup)
-		// Do not run the full DPU/OVN health gate here. Subsequent tests perform their
-		// normal reprovisioning preflight before making further changes.
+		if configRestoreErr == nil {
+			By("AfterAll: waiting for cluster health after restoring the DPUDeployment")
+			waitForClusterHealthAfterDPUReprovisioning()
+		}
+
 		Expect(configRestoreErr).NotTo(HaveOccurred(), "AfterAll: restoring controlPlaneMTU")
 	})
 
 	// ── Pre-conditions ──────────────────────────────────────────────────────
-
-	It("pre-condition: should have a DPUDeployment in Ready state", func() {
-		dpuDeployment := getDPUDeployment()
-		Expect(isReady(dpuDeployment.Status.Conditions)).To(BeTrue(),
-			"DPUDeployment must be Ready before MTU change test")
-		dpuDeploymentBackup = dpuDeployment.DeepCopy()
-	})
 
 	It("pre-condition: should read current controlPlaneMTU and compute a different value", func() {
 		var err error
@@ -164,14 +156,15 @@ var _ = Describe("TC-MTU-003: Change ControlplaneMTU Before DPUDeployment", Labe
 		Expect(workloadPods.HostNetWorkers).NotTo(BeEmpty(), "no sriov-test-worker-hostnetwork pods discovered")
 
 		for _, hnw := range workloadPods.HostNetWorkers {
-			bridgeName, mtu, err := getHostOOBBridgeMTU(hnw.Name, newMTU)
+			mtu, err := getInterfaceMTU(ctx, mgmtConfig, mgmtClientset, cfg.WorkloadNamespace,
+				hnw.Name, workloadContainerName, hostOOBBridgeName)
 			Expect(err).NotTo(HaveOccurred())
-			By(fmt.Sprintf("Checking %s MTU via hostNetwork pod %s", bridgeName, hnw.Name))
+			By(fmt.Sprintf("Checking %s MTU via hostNetwork pod %s", hostOOBBridgeName, hnw.Name))
 			GinkgoWriter.Printf("Pod %s (node %s) %s MTU=%d (new controlPlaneMTU=%d)\n",
-				hnw.Name, hnw.Spec.NodeName, bridgeName, mtu, newMTU)
+				hnw.Name, hnw.Spec.NodeName, hostOOBBridgeName, mtu, newMTU)
 
 			Expect(mtu).To(Equal(newMTU),
-				"%s MTU on DPU host worker node %s should equal the new controlPlaneMTU", bridgeName, hnw.Spec.NodeName)
+				"%s MTU on DPU host worker node %s should equal the new controlPlaneMTU", hostOOBBridgeName, hnw.Spec.NodeName)
 		}
 	})
 
@@ -194,26 +187,6 @@ var _ = Describe("TC-MTU-003: Change ControlplaneMTU Before DPUDeployment", Labe
 	})
 
 })
-
-// getHostOOBBridgeMTU supports both bridge names used by DPF host
-// configurations. A bridge is accepted only when it exists and has the MTU
-// under test, which avoids masking a stale or unrelated bridge.
-func getHostOOBBridgeMTU(podName string, expectedMTU int) (string, int, error) {
-	probeErrors := make([]string, 0, len(hostOOBBridgeNames))
-	for _, bridgeName := range hostOOBBridgeNames {
-		mtu, err := getInterfaceMTU(ctx, mgmtConfig, mgmtClientset, cfg.WorkloadNamespace, podName, workloadContainerName, bridgeName)
-		if err != nil {
-			probeErrors = append(probeErrors, fmt.Sprintf("%s: %v", bridgeName, err))
-			continue
-		}
-		if mtu == expectedMTU {
-			return bridgeName, mtu, nil
-		}
-		probeErrors = append(probeErrors, fmt.Sprintf("%s has MTU %d, expected %d", bridgeName, mtu, expectedMTU))
-	}
-
-	return "", 0, fmt.Errorf("no host-side OOB bridge with MTU %d found on pod %s: %s", expectedMTU, podName, strings.Join(probeErrors, "; "))
-}
 
 // getControlPlaneMTU reads the live DPFOperatorConfig and returns its
 // spec.networking.controlPlaneMTU, falling back to the CRD default if unset.

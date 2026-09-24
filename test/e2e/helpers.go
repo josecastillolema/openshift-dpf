@@ -2,9 +2,8 @@ package e2e
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,9 +25,6 @@ const (
 	ovnNodeComponentLabel      = "app.kubernetes.io/component"
 	ovnNodeComponentLabelValue = "ovnkube-node"
 )
-
-// mtuLineRegexp matches the "mtu <N>" token in `ip link show` output.
-var mtuLineRegexp = regexp.MustCompile(`\bmtu\s+(\d+)\b`)
 
 // isReady reports whether the given conditions slice contains a Ready=True condition.
 func isReady(conditions []metav1.Condition) bool {
@@ -145,25 +141,33 @@ func findOVNNodePodOnNode(nodeName string) (*corev1.Pod, error) {
 	return nil, nil
 }
 
-// getInterfaceMTU executes `ip link show <iface>` in a pod container and
+// getInterfaceMTU executes `ip -j link show dev <iface>` in a pod container and
 // parses the reported MTU.
 func getInterfaceMTU(ctx context.Context, restCfg *rest.Config, cs *kubernetes.Clientset, namespace, podName, containerName, iface string) (int, error) {
 	result, err := utils.ExecInPod(ctx, restCfg, cs, namespace, podName, containerName, []string{
-		"ip", "link", "show", iface,
+		"ip", "-j", "link", "show", "dev", iface,
 	})
 	if err != nil {
 		return 0, fmt.Errorf("getting %s MTU on pod %s: %w", iface, podName, err)
 	}
 
-	match := mtuLineRegexp.FindStringSubmatch(result.Stdout)
-	if match == nil {
-		return 0, fmt.Errorf("could not parse MTU for interface %s on pod %s from output: %s", iface, podName, result.Stdout)
+	var links []struct {
+		IfName string `json:"ifname"`
+		MTU    int    `json:"mtu"`
 	}
-	mtu, err := strconv.Atoi(match[1])
-	if err != nil {
-		return 0, fmt.Errorf("parsing MTU value %q for interface %s: %w", match[1], iface, err)
+	if err := json.Unmarshal([]byte(result.Stdout), &links); err != nil {
+		return 0, fmt.Errorf("parsing interface JSON for %s on pod %s: %w", iface, podName, err)
 	}
-	return mtu, nil
+	for _, link := range links {
+		if link.IfName != iface {
+			continue
+		}
+		if link.MTU <= 0 {
+			return 0, fmt.Errorf("interface %s on pod %s has invalid MTU %d", iface, podName, link.MTU)
+		}
+		return link.MTU, nil
+	}
+	return 0, fmt.Errorf("interface %s not found in ip output on pod %s: %s", iface, podName, result.Stdout)
 }
 
 // deleteDPUDeploymentAndWait deletes the configured DPUDeployment and waits

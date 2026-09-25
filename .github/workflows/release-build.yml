@@ -222,10 +222,11 @@ jobs:
         if: always()
         env:
           DRY_RUN: ${{ inputs.dry_run }}
+          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           DRY="${DRY_RUN}"
           echo "## Release ${{ env.TAG }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Source: \`${{ env.SOURCE_REPO }}\` @ \`${{ inputs.source_ref }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Source: \`${{ env.SOURCE_REPO }}\` @ \`${SOURCE_REF}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "Commit: \`$(git rev-parse HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           if [[ "$DRY" == "true" ]]; then

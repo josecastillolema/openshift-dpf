@@ -54,10 +54,12 @@ jobs:
         working-directory: source
     steps:
       - name: Clone source repository
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           git clone "${{ env.SOURCE_REPO }}" "$GITHUB_WORKSPACE/source"
           cd "$GITHUB_WORKSPACE/source"
-          git checkout "${{ inputs.source_ref }}"
+          git checkout "${SOURCE_REF}"
         working-directory: ${{ github.workspace }}
 
       - name: Patch hostdriver MFT download retry
@@ -106,9 +108,12 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Resolve tag
+        env:
+          INPUT_FLOATING_TAG: ${{ inputs.floating_tag }}
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           IMMUTABLE_PREFIX="${RELEASE_VERSION}-${RELEASE_CHANNEL}"
-          FLOATING_TAG="${{ inputs.floating_tag }}"
+          FLOATING_TAG="${INPUT_FLOATING_TAG}"
           if [[ -z "${FLOATING_TAG}" ]]; then
             FLOATING_TAG="${IMMUTABLE_PREFIX}"
           fi
@@ -119,7 +124,6 @@ jobs:
           CHAN_RE="${RELEASE_CHANNEL//./\\.}"
           ALLOWED="^${VER_RE}-${CHAN_RE}\\.[A-Za-z0-9][A-Za-z0-9.-]*$"
 
-          INPUT_TAG="${{ inputs.tag }}"
           if [[ -n "${INPUT_TAG}" ]]; then
             if [[ ! "${INPUT_TAG}" =~ ${ALLOWED} ]]; then
               echo "::error::tag must be ${IMMUTABLE_PREFIX}.<id> (e.g. ${IMMUTABLE_PREFIX}.1 or ${IMMUTABLE_PREFIX}.<sha>)."
@@ -132,9 +136,11 @@ jobs:
           fi
 
       - name: Verify checkout
+        env:
+          SOURCE_REF: ${{ inputs.source_ref }}
         run: |
           echo "Repository : ${{ env.SOURCE_REPO }}"
-          echo "Ref        : ${{ inputs.source_ref }}"
+          echo "Ref        : ${SOURCE_REF}"
           echo "Tag        : ${{ env.TAG }}"
           echo "Channel    : ${{ env.FLOATING_TAG }}"
           echo "Commit     : $(git rev-parse HEAD)"
@@ -214,8 +220,10 @@ jobs:
 
       - name: Summary
         if: always()
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
         run: |
-          DRY="${{ inputs.dry_run }}"
+          DRY="${DRY_RUN}"
           echo "## Release ${{ env.TAG }}" >> "$GITHUB_STEP_SUMMARY"
           echo "Source: \`${{ env.SOURCE_REPO }}\` @ \`${{ inputs.source_ref }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "Commit: \`$(git rev-parse HEAD)\`" >> "$GITHUB_STEP_SUMMARY"
@@ -231,9 +239,11 @@ jobs:
           fi
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Helm charts" >> "$GITHUB_STEP_SUMMARY"
-          echo "Pushed to \`${{ env.HELM_REGISTRY }}\` as \`${{ env.TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
           if [[ "$DRY" != "true" ]]; then
+            echo "Pushed to \`${{ env.HELM_REGISTRY }}\` as \`${{ env.TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
             echo "Floating OCI tag: \`${{ env.FLOATING_TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "Built as \`${{ env.TAG }}\` (not pushed)" >> "$GITHUB_STEP_SUMMARY"
           fi
           ls -1 hack/charts/*.tgz 2>/dev/null | while read f; do
             echo "- \`$(basename "$f")\`" >> "$GITHUB_STEP_SUMMARY"

@@ -238,7 +238,7 @@ validate_aicli() {
 # When PAYLOAD_URL is set (e.g. by Prow), derive OPENSHIFT_VERSION and
 # OCP_RELEASE_IMAGE from the release payload instead of using .env defaults.
 resolve_payload() {
-    export AI_URL="http://127.0.0.1:8090"
+    export AI_URL="${AI_URL:-http://127.0.0.1:8090}"
     if ! command -v oc &>/dev/null; then
         echo "Error: PAYLOAD_URL is set but 'oc' is not available" >&2
         exit 1

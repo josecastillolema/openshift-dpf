@@ -270,11 +270,29 @@ function deploy_onprem_ai() {
     log "INFO" "Using aicli from: $(which aicli)"
     log "INFO" "Deploying on-prem Assisted Installer with release image ${PAYLOAD_URL}..."
     local _short_version="${OPENSHIFT_VERSION%%.*}.$(echo "$OPENSHIFT_VERSION" | cut -d. -f2)"
+
+    # When AI_URL points to a remote host (e.g. Prow deploying through an SSH
+    # tunnel), pass the host and port overrides so aicli configures
+    # SERVICE_BASE_URL for remote VMs to phone home correctly.
+    local _onprem_args=()
+    if [[ "${AI_URL}" != *"127.0.0.1"* ]] && [[ "${AI_URL}" != *"localhost"* ]]; then
+        local _ai_host
+        _ai_host=$(echo "${AI_URL}" | sed 's|http[s]*://||' | cut -d: -f1)
+        _onprem_args+=(-P "onprem_ip=${_ai_host}")
+    fi
+    if [[ -n "${AI_ONPREM_PORT:-}" ]]; then
+        _onprem_args+=(-P "onprem_port=${AI_ONPREM_PORT}")
+    fi
+    if [[ -n "${AI_ONPREM_IMAGE_PORT:-}" ]]; then
+        _onprem_args+=(-P "onprem_image_port=${AI_ONPREM_IMAGE_PORT}")
+    fi
+
     aicli create onprem \
         -P ocp_release_image="${PAYLOAD_URL}" \
         -P openshift_version="${_short_version}" \
         -P version_long="${OPENSHIFT_VERSION}" \
-        -P installer_registry="quay.io"
+        -P installer_registry="quay.io" \
+        "${_onprem_args[@]}"
     log "INFO" "Waiting for on-prem Assisted Installer API to be ready..."
     local retries=0
     while ! curl -sf --connect-timeout 3 --max-time 5 http://127.0.0.1:8090/api/assisted-install/v2/openshift-versions >/dev/null 2>&1; do

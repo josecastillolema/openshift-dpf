@@ -10,11 +10,8 @@ USER root
 COPY --from=oc-cli /usr/bin/oc /usr/bin/oc
 RUN ln -s /usr/bin/oc /usr/bin/kubectl
 
-RUN dnf install -y findutils gettext git golang jq make openssh-clients podman python3 python3-devel python3-pip rsync && \
-    rpm --import https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official-SHA256 && \
-    dnf install -y --repofrompath='cs10-appstream,https://mirror.stream.centos.org/10-stream/AppStream/$basearch/os/' \
-      --setopt=cs10-appstream.gpgkey=https://www.centos.org/keys/RPM-GPG-KEY-CentOS-Official-SHA256 \
-      libvirt-client virt-install && \
+RUN dnf install -y findutils gettext git golang jq libvirt-client make openssh-clients podman python3-pip rsync virt-install && \
+    dnf install -y --allowerasing python3-devel && \
     dnf clean all
 
 # Copying helm binary

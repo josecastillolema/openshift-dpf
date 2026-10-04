@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
 )
 
 const (
@@ -22,12 +24,13 @@ const (
 	dpfctlDownloadURL = "https://api.ngc.nvidia.com/v2/resources/nvidia/doca/dpfctl/versions/v26.4.0/files/dpfctl-linux-amd64"
 	// Published by the NVIDIA NGC v26.4.0 file metadata for dpfctl-linux-amd64.
 	dpfctlSHA256            = "076461f113d2fe2dc40ff3726b6760f3a0796b32313a10ce9e14f694f852a6c6"
-	dpfctlCommandTimeout    = 45 * time.Minute
+	dpfctlCommandTimeout    = 75 * time.Minute
 	dpfctlDownloadTimeout   = 5 * time.Minute
 	dpfctlCleanupTimeout    = 2 * time.Minute
 	dpfctlCleanupPollPeriod = 2 * time.Second
-	dpfctlSOSReportTimeout  = "30m"
-	dpfctlSOSMemoryLimit    = "2Gi"
+	dpfctlSOSHostTimeout    = "30m"
+	dpfctlSOSDPUTimeout     = "1h"
+	dpfctlSOSMemoryLimit    = "4Gi"
 	dpfctlSOSNamespace      = "default"
 	dpfctlSOSCaseIDLabel    = "dpfctl.dpu.nvidia.com/case-id"
 	dpfctlSOSManagedLabel   = "app.kubernetes.io/managed-by=dpfctl"
@@ -78,16 +81,6 @@ func (osCommandRunner) Run(ctx context.Context, executable string, args []string
 	}
 }
 
-type sosReportCase struct {
-	Name             string
-	CaseID           string
-	Args             []string
-	CleanupArgs      []string
-	ArtifactDir      string
-	OutputDir        string
-	DiagnosticTarget string
-}
-
 func dpfctlArtifactDir() (string, error) {
 	dpfctlArtifactOnce.Do(func() {
 		base := os.Getenv("ARTIFACT_DIR")
@@ -130,186 +123,6 @@ func cleanupStandaloneDPFCTLBinary() {
 	}
 }
 
-func buildSOSReportCases(hostNodes, dpuNodes []string, artifactDir, runID string) []sosReportCase {
-	newCase := func(name, caseID, caseArtifactDir, diagnosticTarget string, targetArgs []string) sosReportCase {
-		outputDir := filepath.Join(caseArtifactDir, "reports")
-		args := []string{"sosreport", "collect"}
-		args = append(args, targetArgs...)
-		args = append(args,
-			"--case-id", caseID,
-			"--timeout", dpfctlSOSReportTimeout,
-			"--limits.memory", dpfctlSOSMemoryLimit,
-			"--cleanup=false",
-			"--archive",
-			"--archive-only",
-			"--output-dir", outputDir,
-		)
-		return sosReportCase{
-			Name:             name,
-			CaseID:           caseID,
-			Args:             args,
-			CleanupArgs:      append([]string{"sosreport", "cleanup"}, append(targetArgsForCleanup(targetArgs), "--case-id", caseID)...),
-			ArtifactDir:      caseArtifactDir,
-			OutputDir:        outputDir,
-			DiagnosticTarget: diagnosticTarget,
-		}
-	}
-
-	cases := make([]sosReportCase, 0, len(hostNodes)+len(dpuNodes))
-	for i, node := range hostNodes {
-		cases = append(cases, newCase(
-			"no-target-host/"+node,
-			fmt.Sprintf("e2e-dpfctl-host-%s-%d", runID, i),
-			filepath.Join(artifactDir, "no-target-host", node),
-			"host",
-			[]string{"--nodes", node},
-		))
-	}
-	for i, node := range dpuNodes {
-		cases = append(cases, newCase(
-			"target-dpu/"+node,
-			fmt.Sprintf("e2e-dpfctl-dpu-%s-%d", runID, i),
-			filepath.Join(artifactDir, "target-dpu", node),
-			"dpu",
-			[]string{"--target", "dpu", "--nodes", node},
-		))
-	}
-	return cases
-}
-
-func runStandaloneDPFCTLSOSReports(ctx context.Context, runner commandRunner, managementKubeconfig string, hostedKubeconfig []byte, hostNodes, dpuNodes []string) error {
-	if managementKubeconfig == "" {
-		return errors.New("management-cluster KUBECONFIG is empty")
-	}
-
-	rootArtifactDir, err := dpfctlArtifactDir()
-	if err != nil {
-		return fmt.Errorf("create dpfctl artifact directory: %w", err)
-	}
-	artifactDir := filepath.Join(rootArtifactDir, "tc-log-001")
-	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
-		return fmt.Errorf("create TC-LOG-001 artifact directory: %w", err)
-	}
-	fmt.Printf("TC-LOG-001 dpfctl artifacts: %s\n", artifactDir)
-
-	binaryPath, err := standaloneDPFCTLBinary(ctx)
-	if err != nil {
-		_ = appendExecutionLog(artifactDir, fmt.Sprintf("download failed: %v\n", err))
-		return err
-	}
-
-	if err := appendExecutionLog(artifactDir, fmt.Sprintf("TC-LOG-001 standalone dpfctl SOS collection (%s)\n", dpfctlVersion)); err != nil {
-		return err
-	}
-
-	diagnosticKubeconfigs := map[string]string{"host": managementKubeconfig}
-	if len(dpuNodes) > 0 {
-		if len(hostedKubeconfig) == 0 {
-			return errors.New("hosted-cluster kubeconfig is empty")
-		}
-		hostedKubeconfigPath, removeHostedKubeconfig, err := temporaryKubeconfig(hostedKubeconfig)
-		if err != nil {
-			return fmt.Errorf("prepare hosted kubeconfig for SOS pod diagnostics: %w", err)
-		}
-		defer removeHostedKubeconfig()
-		diagnosticKubeconfigs["dpu"] = hostedKubeconfigPath
-	}
-
-	// dpfctl must start from the management cluster for --target dpu. It discovers
-	// DPUCluster resources there, then reads and injects the hosted kubeconfig into
-	// each DPU SOS Job itself.
-	env := []string{"KUBECONFIG=" + managementKubeconfig}
-	runID := time.Now().UTC().Format("20060102-150405")
-	cases := buildSOSReportCases(hostNodes, dpuNodes, artifactDir, runID)
-	if len(cases) == 0 {
-		return errors.New("no SOS report cases were requested")
-	}
-	var strictErrors []error
-
-	for _, testCase := range cases {
-		// --archive-only removes OutputDir and writes reports.tar.gz beside it,
-		// so the enclosing per-case directory is the cleanup and verification boundary.
-		if err := os.RemoveAll(testCase.ArtifactDir); err != nil {
-			strictErrors = append(strictErrors, fmt.Errorf("clear %s artifact directory: %w", testCase.Name, err))
-			continue
-		}
-		if err := os.MkdirAll(testCase.ArtifactDir, 0o755); err != nil {
-			strictErrors = append(strictErrors, fmt.Errorf("create %s output directory: %w", testCase.Name, err))
-			continue
-		}
-
-		fmt.Printf("Running TC-LOG-001 SOS case %s\n", testCase.Name)
-		result := runWithTimeout(ctx, runner, binaryPath, testCase.Args, env)
-
-		// dpfctl can emit benign warnings on stderr, including a missing optional
-		// /etc/dpf-defaults.yaml. Only the process exit status and archive validation
-		// determine whether this case failed.
-		caseErr := result.Err
-		if err := writeCommandLog(filepath.Join(testCase.ArtifactDir, "command.log"), result); err != nil {
-			caseErr = errors.Join(caseErr, err)
-		}
-		if caseErr == nil {
-			archivePath := testCase.OutputDir + ".tar.gz"
-			archiveInfo, archiveErr := os.Stat(archivePath)
-			if archiveErr != nil {
-				caseErr = fmt.Errorf("verify SOS report archive %s: %w", archivePath, archiveErr)
-			} else if archiveInfo.Size() == 0 {
-				caseErr = fmt.Errorf("SOS report archive %s is empty", archivePath)
-			}
-		}
-		if caseErr != nil {
-			describeResult := describeSOSPods(ctx, runner, diagnosticKubeconfigs[testCase.DiagnosticTarget], testCase.CaseID)
-			if err := writeCommandLog(filepath.Join(testCase.ArtifactDir, "pod-describe-on-failure.log"), describeResult); err != nil {
-				caseErr = errors.Join(caseErr, err)
-			} else if describeResult.Err != nil {
-				caseErr = errors.Join(caseErr, fmt.Errorf("describe failed SOS pods: %w", describeResult.Err))
-			}
-		}
-
-		// --cleanup=false keeps failed pods available for the diagnostic above.
-		// Cleanup is always scoped by this case's unique case ID; target arguments
-		// further restrict DPU cases to the hosted cluster.
-		cleanupResult := runWithTimeout(ctx, runner, binaryPath, testCase.CleanupArgs, env)
-		if err := writeCommandLog(filepath.Join(testCase.ArtifactDir, "cleanup.log"), cleanupResult); err != nil {
-			caseErr = errors.Join(caseErr, err)
-		} else if cleanupResult.Err != nil {
-			caseErr = errors.Join(caseErr, fmt.Errorf("cleanup failed: %w", cleanupResult.Err))
-		}
-
-		cleanupVerification := verifySOSResourcesDeleted(ctx, runner, diagnosticKubeconfigs[testCase.DiagnosticTarget], testCase.CaseID)
-		if err := writeCommandLog(filepath.Join(testCase.ArtifactDir, "cleanup-verification.log"), cleanupVerification); err != nil {
-			caseErr = errors.Join(caseErr, err)
-		} else if cleanupVerification.Err != nil {
-			caseErr = errors.Join(caseErr, cleanupVerification.Err)
-		}
-
-		if caseErr != nil {
-			strictErrors = append(strictErrors, fmt.Errorf("%s SOS collection failed: %w", testCase.Name, caseErr))
-		}
-	}
-
-	return errors.Join(strictErrors...)
-}
-
-func temporaryKubeconfig(contents []byte) (string, func(), error) {
-	file, err := os.CreateTemp("", "openshift-dpf-hosted-kubeconfig-")
-	if err != nil {
-		return "", nil, err
-	}
-	path := file.Name()
-	remove := func() { _ = os.Remove(path) }
-	if _, err := file.Write(contents); err != nil {
-		_ = file.Close()
-		remove()
-		return "", nil, err
-	}
-	if err := file.Close(); err != nil {
-		remove()
-		return "", nil, err
-	}
-	return path, remove, nil
-}
-
 func sosResourceSelector(caseID string) string {
 	return strings.Join([]string{
 		dpfctlSOSManagedLabel,
@@ -324,6 +137,29 @@ func describeSOSPods(ctx context.Context, runner commandRunner, kubeconfig, case
 		"describe", "pods",
 		"--namespace", dpfctlSOSNamespace,
 		"--selector", sosResourceSelector(caseID),
+	}, nil)
+}
+
+func getSOSPodImageIDs(ctx context.Context, runner commandRunner, kubeconfig, caseID string) commandResult {
+	const imageIDJSONPath = `{range .items[*]}pod={.metadata.name}{"\n"}{range .status.initContainerStatuses[?(@.name=="sosreport")]}image={.image}{"\n"}imageID={.imageID}{"\n"}{end}{end}`
+	return runWithTimeout(ctx, runner, "oc", []string{
+		"--kubeconfig", kubeconfig,
+		"get", "pods",
+		"--namespace", dpfctlSOSNamespace,
+		"--selector", sosResourceSelector(caseID),
+		"--output", "jsonpath=" + imageIDJSONPath,
+	}, nil)
+}
+
+func getSOSContainerLogs(ctx context.Context, runner commandRunner, kubeconfig, caseID string) commandResult {
+	return runWithTimeout(ctx, runner, "oc", []string{
+		"--kubeconfig", kubeconfig,
+		"logs",
+		"--namespace", dpfctlSOSNamespace,
+		"--selector", sosResourceSelector(caseID),
+		"--container", "sosreport",
+		"--prefix=true",
+		"--timestamps=true",
 	}, nil)
 }
 
@@ -370,7 +206,7 @@ func runStandaloneDPFCTLDescribeAll(ctx context.Context, runner commandRunner, k
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		return fmt.Errorf("create TC-LOG-002 artifact directory: %w", err)
 	}
-	fmt.Printf("TC-LOG-002 dpfctl artifacts: %s\n", artifactDir)
+	GinkgoWriter.Printf("TC-LOG-002 dpfctl artifacts: %s\n", artifactDir)
 
 	binaryPath, err := standaloneDPFCTLBinary(ctx)
 	if err != nil {

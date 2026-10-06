@@ -263,6 +263,12 @@ EOF
 }
 
 function deploy_onprem_ai() {
+    if podman pod exists assisted-installer 2>/dev/null \
+        && curl -sf --connect-timeout 3 --max-time 5 http://127.0.0.1:8090/api/assisted-install/v2/openshift-versions >/dev/null 2>&1 \
+        && curl -sf --connect-timeout 3 --max-time 5 http://127.0.0.1:8888/health >/dev/null 2>&1; then
+        log "INFO" "On-prem Assisted Installer is already running and healthy, skipping deployment"
+        return 0
+    fi
     if podman pod exists assisted-installer 2>/dev/null; then
         log "INFO" "Removing previous on-prem Assisted Installer pod..."
         podman pod rm -f assisted-installer

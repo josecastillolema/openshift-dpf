@@ -15,18 +15,8 @@ on:
         description: Prerelease channel (e.g. stable)
         required: true
         type: string
-      floating_tag:
-        description: Mutable channel pointer. Defaults to <release_version>-<release_channel>.
-        required: false
-        type: string
-        default: ""
-      tag:
-        description: Immutable prerelease override (must be <version>-<channel>.<id>)
-        required: false
-        type: string
-        default: ""
       dry_run:
-        description: Build only, skip push and retag
+        description: Build only, skip push
         required: false
         type: boolean
         default: false
@@ -108,32 +98,9 @@ jobs:
         working-directory: ${{ github.workspace }}
 
       - name: Resolve tag
-        env:
-          INPUT_FLOATING_TAG: ${{ inputs.floating_tag }}
-          INPUT_TAG: ${{ inputs.tag }}
         run: |
-          IMMUTABLE_PREFIX="${RELEASE_VERSION}-${RELEASE_CHANNEL}"
-          FLOATING_TAG="${INPUT_FLOATING_TAG}"
-          if [[ -z "${FLOATING_TAG}" ]]; then
-            FLOATING_TAG="${IMMUTABLE_PREFIX}"
-          fi
-          echo "IMMUTABLE_PREFIX=${IMMUTABLE_PREFIX}" >> "$GITHUB_ENV"
-          echo "FLOATING_TAG=${FLOATING_TAG}" >> "$GITHUB_ENV"
-
-          VER_RE="${RELEASE_VERSION//./\\.}"
-          CHAN_RE="${RELEASE_CHANNEL//./\\.}"
-          ALLOWED="^${VER_RE}-${CHAN_RE}\\.[A-Za-z0-9][A-Za-z0-9.-]*$"
-
-          if [[ -n "${INPUT_TAG}" ]]; then
-            if [[ ! "${INPUT_TAG}" =~ ${ALLOWED} ]]; then
-              echo "::error::tag must be ${IMMUTABLE_PREFIX}.<id> (e.g. ${IMMUTABLE_PREFIX}.1 or ${IMMUTABLE_PREFIX}.<sha>)."
-              exit 1
-            fi
-            echo "TAG=${INPUT_TAG}" >> "$GITHUB_ENV"
-          else
-            SHORT_SHA=$(git rev-parse --short HEAD)
-            echo "TAG=${IMMUTABLE_PREFIX}.${SHORT_SHA}" >> "$GITHUB_ENV"
-          fi
+          TAG="${RELEASE_VERSION}-${RELEASE_CHANNEL}"
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
 
       - name: Verify checkout
         env:
@@ -142,7 +109,6 @@ jobs:
           echo "Repository : ${{ env.SOURCE_REPO }}"
           echo "Ref        : ${SOURCE_REF}"
           echo "Tag        : ${{ env.TAG }}"
-          echo "Channel    : ${{ env.FLOATING_TAG }}"
           echo "Commit     : $(git rev-parse HEAD)"
 
       - name: Set up Go
@@ -185,35 +151,6 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: make release
 
-      - name: Retag as floating channel
-        if: ${{ !inputs.dry_run }}
-        run: |
-          set -euo pipefail
-          if [[ "${TAG}" == "${FLOATING_TAG}" ]]; then
-            echo "Build tag is already ${FLOATING_TAG}; nothing to retag."
-            exit 0
-          fi
-
-          MANIFEST="artifacts/release-manifest.yaml"
-          if [[ ! -f "${MANIFEST}" ]]; then
-            echo "::error::${MANIFEST} not found; cannot retag to ${FLOATING_TAG}"
-            exit 1
-          fi
-
-          echo "Pointing ${FLOATING_TAG} at ${TAG}"
-          suffix=":${TAG}"
-          while IFS= read -r ref; do
-            [[ -z "${ref}" ]] && continue
-            src="${ref#oci://}"
-            if [[ "${src}" != *"${suffix}" ]]; then
-              echo "Skipping ${src} (does not end with ${suffix})"
-              continue
-            fi
-            dest="${src%"${suffix}"}:${FLOATING_TAG}"
-            echo "Retag ${src} -> ${dest}"
-            docker buildx imagetools create --tag "${dest}" "${src}"
-          done < <(awk '/^[[:space:]]*ref:[[:space:]]/ { print $2 }' "${MANIFEST}")
-
       - name: Build only (dry run)
         if: ${{ inputs.dry_run }}
         run: make release-build
@@ -234,15 +171,11 @@ jobs:
             echo "" >> "$GITHUB_STEP_SUMMARY"
           fi
           echo "### Container images" >> "$GITHUB_STEP_SUMMARY"
-          echo "Immutable tag: \`${{ env.REGISTRY }}/*:${{ env.TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
-          if [[ "$DRY" != "true" ]]; then
-            echo "Floating channel: \`${{ env.REGISTRY }}/*:${{ env.FLOATING_TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          echo "Tag: \`${{ env.REGISTRY }}/*:${{ env.TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "### Helm charts" >> "$GITHUB_STEP_SUMMARY"
           if [[ "$DRY" != "true" ]]; then
             echo "Pushed to \`${{ env.HELM_REGISTRY }}\` as \`${{ env.TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
-            echo "Floating OCI tag: \`${{ env.FLOATING_TAG }}\`" >> "$GITHUB_STEP_SUMMARY"
           else
             echo "Built as \`${{ env.TAG }}\` (not pushed)" >> "$GITHUB_STEP_SUMMARY"
           fi

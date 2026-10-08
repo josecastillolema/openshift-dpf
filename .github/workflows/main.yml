@@ -20,11 +20,6 @@ on:
         required: false
         default: ""
         type: string
-      tag:
-        description: "Immutable prerelease override for a single channel (e.g. 26.4.0-stable.1). Ignored when channel is all."
-        required: false
-        default: ""
-        type: string
       dry_run:
         description: "Dry run: build only, skip push"
         required: false
@@ -45,7 +40,6 @@ jobs:
       source_ref: ${{ inputs.channel == 'stable-26.4' && inputs.ref || 'v26.4.0-latest-stable' }}
       release_version: "26.4.0"
       release_channel: "stable"
-      tag: ${{ inputs.channel == 'stable-26.4' && inputs.tag || '' }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
     secrets: inherit
 
@@ -59,7 +53,6 @@ jobs:
       source_ref: ${{ inputs.channel == 'stable-26.8' && inputs.ref || 'v26.8.0-latest-stable' }}
       release_version: "26.8.0"
       release_channel: "stable"
-      tag: ${{ inputs.channel == 'stable-26.8' && inputs.tag || '' }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
     secrets: inherit
 
@@ -73,6 +66,5 @@ jobs:
       source_ref: ${{ inputs.channel == 'stable-26.10' && inputs.ref || 'v26.10.0-latest-stable' }}
       release_version: "26.10.0"
       release_channel: "stable"
-      tag: ${{ inputs.channel == 'stable-26.10' && inputs.tag || '' }}
       dry_run: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || false }}
     secrets: inherit

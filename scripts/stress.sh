@@ -552,12 +552,12 @@ run_stress() {
     fi
     log "INFO" "Tokens and timeout window: ${safety_window} (churn duration + 24h)"
 
-    # Generate metrics-endpoint.yaml
+    # Generate metrics-endpoint.yaml (contains tokens and credentials)
     local metrics_endpoint_file
     metrics_endpoint_file="${SCRIPT_DIR}/../manifests/generated/metrics-endpoint.yaml"
     mkdir -p "$(dirname "${metrics_endpoint_file}")"
+    trap "rm -f '${metrics_endpoint_file}'" EXIT
     generate_metrics_endpoint "${mgmt_token}" "${hosted_token}" "${hosted_endpoint}" "${metrics_endpoint_file}"
-    trap 'rm -f "${metrics_endpoint_file}"' EXIT
 
     # Run kube-burner-ocp
     log "INFO" "Running kube-burner-ocp node-density-cni"

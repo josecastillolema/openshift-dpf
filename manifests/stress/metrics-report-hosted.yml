@@ -59,7 +59,7 @@
   metricName: memory-multus
   instant: true
 
-- query: max(avg_over_time(container_memory_rss{name!="", namespace="openshift-multus", pod=~"(multus).+", container!="POD"}[{{.elapsed}}:])) by (container)
+- query: max(max_over_time(container_memory_rss{name!="", namespace="openshift-multus", pod=~"(multus).+", container!="POD"}[{{.elapsed}}:])) by (container)
   metricName: max-memory-multus
   instant: true
 
@@ -114,7 +114,7 @@
   metricName: memory-cluster-usage-ratio
   instant: true
 
-- query: avg_over_time(cluster:memory_usage:ratio[{{.elapsed}}:])
+- query: max_over_time(cluster:memory_usage:ratio[{{.elapsed}}:])
   metricName: max-memory-cluster-usage-ratio
   instant: true
 

@@ -346,6 +346,7 @@ cleanup_stress() {
     hosted_oc delete rolebinding prometheus-k8s -n "${DPF_OPERATOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
     hosted_oc delete role prometheus-k8s -n "${DPF_OPERATOR_NAMESPACE}" --ignore-not-found 2>/dev/null || true
     hosted_oc label namespace "${DPF_OPERATOR_NAMESPACE}" openshift.io/cluster-monitoring- 2>/dev/null || true
+    hosted_oc delete svc thanos-querier-nodeport -n openshift-monitoring --ignore-not-found 2>/dev/null || true
 
     log "INFO" "Disabling ovs-exporter on DPU nodes"
     local nodes
@@ -403,7 +404,7 @@ spec:
   ports:
   - name: https
     port: 9091
-    targetPort: https
+    targetPort: web
     protocol: TCP
 EOF
     fi
@@ -461,12 +462,7 @@ generate_metrics_endpoint() {
 
     local mgmt_endpoint="https://prometheus-k8s-openshift-monitoring.apps.${CLUSTER_NAME}.${BASE_DOMAIN}"
 
-    if [[ -z "${OPENSEARCH_URL}" ]]; then
-        log "ERROR" "OPENSEARCH_URL is not set. Set it in .env or export it before running."
-        log "ERROR" "Format: https://user:password@opensearch-host:port"
-        return 1
-    fi
-
+    umask 077
     cat > "${output_file}" <<EOF
 # Management cluster Prometheus (alerts + metrics collection)
 - endpoint: ${mgmt_endpoint}
@@ -513,6 +509,12 @@ run_stress() {
         return 1
     fi
 
+    if [[ -z "${OPENSEARCH_URL}" ]]; then
+        log "ERROR" "OPENSEARCH_URL is not set. Set it in .env or export it before running."
+        log "ERROR" "Format: https://user:password@opensearch-host:port"
+        return 1
+    fi
+
     # Start iperf traffic generators
     setup_iperf_traffic
 
@@ -555,6 +557,7 @@ run_stress() {
     metrics_endpoint_file="${SCRIPT_DIR}/../manifests/generated/metrics-endpoint.yaml"
     mkdir -p "$(dirname "${metrics_endpoint_file}")"
     generate_metrics_endpoint "${mgmt_token}" "${hosted_token}" "${hosted_endpoint}" "${metrics_endpoint_file}"
+    trap 'rm -f "${metrics_endpoint_file}"' EXIT
 
     # Run kube-burner-ocp
     log "INFO" "Running kube-burner-ocp node-density-cni"

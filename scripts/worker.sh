@@ -464,6 +464,11 @@ provision_all_workers() {
            filename="baremetalhost-dpu.yaml"
         fi
 
+        local bmh_inspection_mode="disabled"
+        if [[ "${BMH_ENABLE_INSPECTION}" == "true" ]]; then
+            bmh_inspection_mode="agent"
+        fi
+
         # Generate BareMetalHost using appropriate template
         process_template \
             "${WORKER_TEMPLATE_DIR}/$filename" \
@@ -471,7 +476,8 @@ provision_all_workers() {
             "<WORKER_NAME>" "$name" \
             "<BOOT_MAC>" "$boot_mac" \
             "<BMC_IP>" "$bmc_ip" \
-            "<ROOT_DEVICE>" "$root_dev"
+            "<ROOT_DEVICE>" "$root_dev" \
+            "<BMH_INSPECTION_MODE>" "$bmh_inspection_mode"
 
         maybe_attach_nno_jumbo_mtu "$name" "$boot_mac" "${WORKER_GENERATED_DIR}/${name}-bmh.yaml"
 

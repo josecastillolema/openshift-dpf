@@ -495,6 +495,23 @@ EOF
     log "INFO" "Generated metrics-endpoint file: ${output_file}"
 }
 
+_run_metrics_file=""
+_run_iperf_ns=""
+
+_run_cleanup() {
+    [[ -n "${_run_metrics_file}" ]] && rm -f "${_run_metrics_file}"
+    log "INFO" "iperf pod status:"
+    oc get pods -n "${IPERF_NAMESPACE}" -o wide 2>/dev/null || true
+    if [[ -n "${_run_iperf_ns}" ]]; then
+        log "INFO" "Cleaning up iperf namespace"
+        oc delete namespace "${_run_iperf_ns}" --ignore-not-found 2>/dev/null || true
+    else
+        log "INFO" "Removing iperf resources"
+        oc delete deployment iperf-a iperf-b -n "${IPERF_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+        oc delete service iperf-a iperf-b -n "${IPERF_NAMESPACE}" --ignore-not-found 2>/dev/null || true
+    fi
+}
+
 run_stress() {
     log "INFO" "Starting kube-burner-ocp stress run"
 
@@ -513,6 +530,15 @@ run_stress() {
         log "ERROR" "Format: https://user:password@opensearch-host:port"
         return 1
     fi
+
+    # Track iperf namespace ownership: only clean up if this run created it
+    if ! oc get namespace "${IPERF_NAMESPACE}" &>/dev/null; then
+        _run_iperf_ns="${IPERF_NAMESPACE}"
+    fi
+
+    _run_metrics_file="${SCRIPT_DIR}/../manifests/generated/metrics-endpoint.yaml"
+    mkdir -p "$(dirname "${_run_metrics_file}")"
+    trap _run_cleanup EXIT
 
     # Start iperf traffic generators
     setup_iperf_traffic
@@ -552,11 +578,7 @@ run_stress() {
     log "INFO" "Tokens and timeout window: ${safety_window} (churn duration + 24h)"
 
     # Generate metrics-endpoint.yaml (contains tokens and credentials)
-    local metrics_endpoint_file
-    metrics_endpoint_file="${SCRIPT_DIR}/../manifests/generated/metrics-endpoint.yaml"
-    mkdir -p "$(dirname "${metrics_endpoint_file}")"
-    trap "rm -f '${metrics_endpoint_file}'" EXIT
-    generate_metrics_endpoint "${mgmt_token}" "${hosted_token}" "${hosted_endpoint}" "${metrics_endpoint_file}"
+    generate_metrics_endpoint "${mgmt_token}" "${hosted_token}" "${hosted_endpoint}" "${_run_metrics_file}"
 
     # Run kube-burner-ocp
     log "INFO" "Running kube-burner-ocp node-density-cni"
@@ -574,14 +596,9 @@ run_stress() {
         --churn-percent="${STRESS_CHURN_PERCENT}" \
         --churn-delay="${STRESS_CHURN_DELAY}" \
         --timeout="${safety_window}" \
-        --metrics-endpoint="${metrics_endpoint_file}"
+        --metrics-endpoint="${_run_metrics_file}"
 
     log "INFO" "kube-burner-ocp stress run complete"
-
-    log "INFO" "iperf pod status:"
-    oc get pods -n "${IPERF_NAMESPACE}" -o wide || true
-    log "INFO" "Cleaning up iperf namespace"
-    oc delete namespace "${IPERF_NAMESPACE}" --ignore-not-found || true
 }
 
 case "${1:-setup}" in

@@ -461,6 +461,20 @@ generate_metrics_endpoint() {
 
     local mgmt_endpoint="https://prometheus-k8s-openshift-monitoring.apps.${CLUSTER_NAME}.${BASE_DOMAIN}"
 
+    local indexer_mgmt="" indexer_hosted=""
+    if [[ -n "${OPENSEARCH_URL}" ]]; then
+        indexer_mgmt="  indexer:
+    esServers: [\"${OPENSEARCH_URL}\"]
+    insecureSkipVerify: true
+    defaultIndex: kube-burner-ocp-mgmt
+    type: opensearch"
+        indexer_hosted="  indexer:
+    esServers: [\"${OPENSEARCH_URL}\"]
+    insecureSkipVerify: true
+    defaultIndex: kube-burner-ocp-hosted
+    type: opensearch"
+    fi
+
     umask 077
     cat > "${output_file}" <<EOF
 # Management cluster Prometheus (alerts + metrics collection)
@@ -471,11 +485,7 @@ generate_metrics_endpoint() {
     - ${STRESS_PROFILES_DIR}/metrics-report.yml
   alerts:
     - ${STRESS_PROFILES_DIR}/alerts.yml
-  indexer:
-    esServers: ["${OPENSEARCH_URL}"]
-    insecureSkipVerify: true
-    defaultIndex: kube-burner-ocp-mgmt
-    type: opensearch
+${indexer_mgmt}
 
 # Hosted cluster thanos-querier via NodePort (metrics + alerts)
 - endpoint: ${hosted_endpoint}
@@ -485,11 +495,7 @@ generate_metrics_endpoint() {
     - ${STRESS_PROFILES_DIR}/metrics-report-hosted.yml
   alerts:
     - ${STRESS_PROFILES_DIR}/alerts.yml
-  indexer:
-    esServers: ["${OPENSEARCH_URL}"]
-    insecureSkipVerify: true
-    defaultIndex: kube-burner-ocp-hosted
-    type: opensearch
+${indexer_hosted}
 EOF
 
     log "INFO" "Generated metrics-endpoint file: ${output_file}"
@@ -526,9 +532,7 @@ run_stress() {
     fi
 
     if [[ -z "${OPENSEARCH_URL}" ]]; then
-        log "ERROR" "OPENSEARCH_URL is not set. Set it in .env or export it before running."
-        log "ERROR" "Format: https://user:password@opensearch-host:port"
-        return 1
+        log "WARN" "OPENSEARCH_URL is not set; metrics will not be indexed to OpenSearch"
     fi
 
     # Track iperf namespace ownership: only clean up if this run created it

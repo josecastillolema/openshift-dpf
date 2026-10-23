@@ -380,7 +380,6 @@ STRESS_DURATION="${STRESS_DURATION:-24h}"
 STRESS_PROFILES_DIR="${SCRIPT_DIR}/../manifests/stress"
 OPENSEARCH_URL="${OPENSEARCH_URL:-}"
 STRESS_PODS_PER_NODE="${STRESS_PODS_PER_NODE:-64}"
-STRESS_CHURN_DURATION="${STRESS_CHURN_DURATION:-${STRESS_DURATION}}"
 STRESS_CHURN_PERCENT="${STRESS_CHURN_PERCENT:-50}"
 STRESS_CHURN_DELAY="${STRESS_CHURN_DELAY:-2m}"
 STRESS_SELECTOR="${STRESS_SELECTOR:-node-role.kubernetes.io/worker-dpu=}"
@@ -533,7 +532,7 @@ run_stress() {
 
     # Safety window: churn duration + 24h for pod creation/teardown, metrics indexing, and token validity
     local churn_hours
-    churn_hours=$(duration_to_hours "${STRESS_CHURN_DURATION}")
+    churn_hours=$(duration_to_hours "${STRESS_DURATION}")
     local safety_hours=$(( churn_hours + 24 ))
     if [[ ${safety_hours} -lt 25 ]]; then
         safety_hours=25
@@ -563,7 +562,6 @@ run_stress() {
     log "INFO" "Running kube-burner-ocp node-density-cni"
     log "INFO" "  Duration: ${STRESS_DURATION}"
     log "INFO" "  Pods per node: ${STRESS_PODS_PER_NODE}"
-    log "INFO" "  Churn duration: ${STRESS_CHURN_DURATION}"
     log "INFO" "  Churn percent: ${STRESS_CHURN_PERCENT}%"
     log "INFO" "  Churn delay: ${STRESS_CHURN_DELAY}"
     log "INFO" "  Selector: ${STRESS_SELECTOR}"
@@ -572,13 +570,18 @@ run_stress() {
     kube-burner-ocp node-density-cni \
         --pods-per-node="${STRESS_PODS_PER_NODE}" \
         --selector="${STRESS_SELECTOR}" \
-        --churn-duration="${STRESS_CHURN_DURATION}" \
+        --churn-duration="${STRESS_DURATION}" \
         --churn-percent="${STRESS_CHURN_PERCENT}" \
         --churn-delay="${STRESS_CHURN_DELAY}" \
         --timeout="${safety_window}" \
         --metrics-endpoint="${metrics_endpoint_file}"
 
     log "INFO" "kube-burner-ocp stress run complete"
+
+    log "INFO" "iperf pod status:"
+    oc get pods -n "${IPERF_NAMESPACE}" -o wide || true
+    log "INFO" "Cleaning up iperf namespace"
+    oc delete namespace "${IPERF_NAMESPACE}" --ignore-not-found || true
 }
 
 case "${1:-setup}" in

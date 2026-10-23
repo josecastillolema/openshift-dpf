@@ -750,6 +750,5 @@ help:
 	@echo "  OPENSEARCH_URL           - OpenSearch URL with credentials for kube-burner indexing (required for stress)"
 	@echo "  STRESS_DURATION          - Test duration (default: 24h)"
 	@echo "  STRESS_PODS_PER_NODE     - Pods per node for node-density-cni (default: 64)"
-	@echo "  STRESS_CHURN_DURATION    - Churn duration, defaults to STRESS_DURATION"
 	@echo "  STRESS_CHURN_PERCENT     - Percentage of pods churned per cycle (default: 50)"
 	@echo "  STRESS_CHURN_DELAY       - Delay between churn cycles (default: 2m)"

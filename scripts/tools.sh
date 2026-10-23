@@ -83,6 +83,7 @@ function install_hypershift() {
     mkdir -p "$HOME/.local/bin"
     install -m 0755 /tmp/hypershift "$HOME/.local/bin/hypershift"
     rm -f /tmp/hypershift
+    export PATH="$HOME/.local/bin:$PATH"
     log "INFO" "Installed hypershift binary to $HOME/.local/bin/hypershift"
 
     # Install the Hypershift operator

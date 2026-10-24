@@ -461,8 +461,12 @@ generate_metrics_endpoint() {
 
     local mgmt_endpoint="https://prometheus-k8s-openshift-monitoring.apps.${CLUSTER_NAME}.${BASE_DOMAIN}"
 
-    local indexer_mgmt="" indexer_hosted=""
+    local metrics_mgmt="" metrics_hosted="" indexer_mgmt="" indexer_hosted=""
     if [[ -n "${OPENSEARCH_URL}" ]]; then
+        metrics_mgmt="  metrics:
+    - ${STRESS_PROFILES_DIR}/metrics-report.yml"
+        metrics_hosted="  metrics:
+    - ${STRESS_PROFILES_DIR}/metrics-report-hosted.yml"
         indexer_mgmt="  indexer:
     esServers: [\"${OPENSEARCH_URL}\"]
     insecureSkipVerify: true
@@ -481,8 +485,7 @@ generate_metrics_endpoint() {
 - endpoint: ${mgmt_endpoint}
   token: ${mgmt_token}
   skipTLSVerify: true
-  metrics:
-    - ${STRESS_PROFILES_DIR}/metrics-report.yml
+${metrics_mgmt}
   alerts:
     - ${STRESS_PROFILES_DIR}/alerts.yml
 ${indexer_mgmt}
@@ -491,8 +494,7 @@ ${indexer_mgmt}
 - endpoint: ${hosted_endpoint}
   token: ${hosted_token}
   skipTLSVerify: true
-  metrics:
-    - ${STRESS_PROFILES_DIR}/metrics-report-hosted.yml
+${metrics_hosted}
   alerts:
     - ${STRESS_PROFILES_DIR}/alerts.yml
 ${indexer_hosted}

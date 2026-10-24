@@ -55,6 +55,50 @@
   description: 99th Kubeproxy network programming latency higher than 10 seconds. {{$value}}s 
   severity: error
 
+# Node conditions
+- expr: kube_node_status_condition{condition="Ready", status="true"} == 0
+  description: "Node {{$labels.node}} is not Ready"
+  severity: error
+
+# DPF node health (hosted cluster, convention matches DiskPressure: True = problem)
+- expr: kube_node_status_condition{condition="SRIOVHealthy", status="true"} == 1
+  description: "SRIOV health issue on {{$labels.node}}"
+  severity: error
+
+- expr: kube_node_status_condition{condition="OVSHealthy", status="true"} == 1
+  description: "OVS health issue on {{$labels.node}}"
+  severity: error
+
+- expr: kube_node_status_condition{condition="OVSvSwitchdHealthy", status="true"} == 1
+  description: "OVS vSwitchd health issue on {{$labels.node}}"
+  severity: error
+
+- expr: kube_node_status_condition{condition="OVSDBHealthy", status="true"} == 1
+  description: "OVSDB health issue on {{$labels.node}}"
+  severity: error
+
+- expr: kube_node_status_condition{condition="UplinkHealthy", status="true"} == 1
+  description: "Uplink health issue on {{$labels.node}}"
+  severity: error
+
+- expr: kube_node_status_condition{condition="DPUModeCorrect", status="true"} == 1
+  description: "DPU mode issue on {{$labels.node}}"
+  severity: error
+
+# Node taints (none expected on worker nodes)
+- expr: kube_node_spec_taint{effect="NoExecute"} > 0
+  description: "NoExecute taint on {{$labels.node}}: {{$labels.key}}"
+  severity: error
+
+- expr: kube_node_spec_taint{effect="NoSchedule"} > 0
+  description: "NoSchedule taint on {{$labels.node}}: {{$labels.key}}"
+  severity: error
+
+# Pod evictions
+- expr: kube_pod_status_reason{reason="Evicted"} > 0
+  description: "Pod {{$labels.namespace}}/{{$labels.pod}} was evicted"
+  severity: error
+
 # Prometheus alerts
 - expr: ALERTS{severity="critical", alertstate="firing", alertname!="ClusterOperatorDown"} > 0
   description: Critical prometheus alert. {{$labels.alertname}}

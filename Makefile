@@ -427,7 +427,7 @@ stress-setup:
 	@$(STRESS_SCRIPT) setup
 
 .PHONY: stress
-stress:
+stress: stress-setup
 	@$(STRESS_SCRIPT) run
 
 .PHONY: stress-verify

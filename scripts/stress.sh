@@ -15,6 +15,7 @@ source "${SCRIPT_DIR}/utils.sh"
 
 DPF_OPERATOR_NAMESPACE="${DPF_OPERATOR_NAMESPACE:-dpf-operator-system}"
 IPERF_NAMESPACE="${IPERF_NAMESPACE:-iperf-test}"
+STRESS_PROFILES_DIR="${SCRIPT_DIR}/../manifests/stress"
 
 hosted_oc() {
     oc --kubeconfig="${HOSTED_KUBECONFIG}" "$@"
@@ -58,109 +59,8 @@ setup_prometheus_monitoring() {
 
     hosted_oc label namespace "${DPF_OPERATOR_NAMESPACE}" openshift.io/cluster-monitoring=true --overwrite 2>/dev/null
 
-    hosted_oc apply -f - <<EOF
-apiVersion: rbac.authorization.k8s.io/v1
-kind: Role
-metadata:
-  name: prometheus-k8s
-  namespace: ${DPF_OPERATOR_NAMESPACE}
-rules:
-- apiGroups: [""]
-  resources: [services, endpoints, pods]
-  verbs: [get, list, watch]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: prometheus-k8s
-  namespace: ${DPF_OPERATOR_NAMESPACE}
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: prometheus-k8s
-subjects:
-- kind: ServiceAccount
-  name: prometheus-k8s
-  namespace: openshift-monitoring
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ovs-metrics
-  namespace: ${DPF_OPERATOR_NAMESPACE}
-  labels:
-    app.kubernetes.io/component: ovs-metrics
-    app.kubernetes.io/name: ovn-kubernetes
-spec:
-  clusterIP: None
-  selector:
-    app.kubernetes.io/component: ovnkube-node
-    app.kubernetes.io/name: ovn-kubernetes
-  ports:
-  - name: ovs-metrics
-    port: 9310
-    targetPort: 9310
-    protocol: TCP
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: ovs-metrics
-  namespace: ${DPF_OPERATOR_NAMESPACE}
-  labels:
-    app.kubernetes.io/component: ovs-metrics
-    app.kubernetes.io/name: ovn-kubernetes
-spec:
-  endpoints:
-  - port: ovs-metrics
-    interval: 30s
-  selector:
-    matchLabels:
-      app.kubernetes.io/component: ovs-metrics
-      app.kubernetes.io/name: ovn-kubernetes
-  namespaceSelector:
-    matchNames:
-    - ${DPF_OPERATOR_NAMESPACE}
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: ovs-exporter
-  namespace: ${DPF_OPERATOR_NAMESPACE}
-  labels:
-    app.kubernetes.io/component: ovs-exporter
-    app.kubernetes.io/name: ovn-kubernetes
-spec:
-  clusterIP: None
-  selector:
-    app.kubernetes.io/component: ovnkube-node
-    app.kubernetes.io/name: ovn-kubernetes
-  ports:
-  - name: ovs-exporter
-    port: 6103
-    targetPort: 6103
-    protocol: TCP
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: ovs-exporter
-  namespace: ${DPF_OPERATOR_NAMESPACE}
-  labels:
-    app.kubernetes.io/component: ovs-exporter
-    app.kubernetes.io/name: ovn-kubernetes
-spec:
-  endpoints:
-  - port: ovs-exporter
-    interval: 30s
-  selector:
-    matchLabels:
-      app.kubernetes.io/component: ovs-exporter
-      app.kubernetes.io/name: ovn-kubernetes
-  namespaceSelector:
-    matchNames:
-    - ${DPF_OPERATOR_NAMESPACE}
-EOF
+    export DPF_OPERATOR_NAMESPACE
+    envsubst '${DPF_OPERATOR_NAMESPACE}' < "${STRESS_PROFILES_DIR}/prometheus-monitoring.yaml" | hosted_oc apply -f -
 
     log "INFO" "Prometheus monitoring configured (ports 9310 and 6103)"
 }
@@ -176,127 +76,16 @@ setup_iperf_traffic() {
         return 1
     fi
 
-    local node_a="${nodes[0]}"
-    local node_b="${nodes[1]}"
-    log "INFO" "Using nodes: ${node_a} (iperf-a) and ${node_b} (iperf-b)"
+    export NODE_A="${nodes[0]}"
+    export NODE_B="${nodes[1]}"
+    export IPERF_NAMESPACE
+    log "INFO" "Using nodes: ${NODE_A} (iperf-a) and ${NODE_B} (iperf-b)"
 
     check_namespace_exists "${IPERF_NAMESPACE}" || oc create namespace "${IPERF_NAMESPACE}"
 
     oc adm policy add-scc-to-user anyuid -z default -n "${IPERF_NAMESPACE}" 2>/dev/null || true
 
-    oc apply -f - <<EOF
-apiVersion: v1
-kind: Service
-metadata:
-  name: iperf-a
-  namespace: ${IPERF_NAMESPACE}
-spec:
-  selector:
-    app: iperf
-    role: a
-  ports:
-  - port: 5201
-    targetPort: 5201
----
-apiVersion: v1
-kind: Service
-metadata:
-  name: iperf-b
-  namespace: ${IPERF_NAMESPACE}
-spec:
-  selector:
-    app: iperf
-    role: b
-  ports:
-  - port: 5201
-    targetPort: 5201
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: iperf-a
-  namespace: ${IPERF_NAMESPACE}
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: iperf
-      role: a
-  template:
-    metadata:
-      labels:
-        app: iperf
-        role: a
-    spec:
-      nodeSelector:
-        kubernetes.io/hostname: ${node_a}
-      containers:
-      - name: server
-        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
-        command: ["/bin/sh", "-c"]
-        args:
-        - microdnf install -y iperf3 && exec iperf3 -s -p 5201
-        ports:
-        - containerPort: 5201
-      - name: client
-        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          microdnf install -y iperf3
-          echo "Waiting for iperf-b service..."
-          until iperf3 -c iperf-b.${IPERF_NAMESPACE}.svc -p 5201 -t 1 >/dev/null 2>&1; do
-            sleep 5
-          done
-          echo "iperf-b reachable, starting continuous bidir traffic"
-          while true; do
-            iperf3 -c iperf-b.${IPERF_NAMESPACE}.svc -p 5201 --bidir -t 3600
-            sleep 1
-          done
----
-apiVersion: apps/v1
-kind: Deployment
-metadata:
-  name: iperf-b
-  namespace: ${IPERF_NAMESPACE}
-spec:
-  replicas: 1
-  selector:
-    matchLabels:
-      app: iperf
-      role: b
-  template:
-    metadata:
-      labels:
-        app: iperf
-        role: b
-    spec:
-      nodeSelector:
-        kubernetes.io/hostname: ${node_b}
-      containers:
-      - name: server
-        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
-        command: ["/bin/sh", "-c"]
-        args:
-        - microdnf install -y iperf3 && exec iperf3 -s -p 5201
-        ports:
-        - containerPort: 5201
-      - name: client
-        image: registry.access.redhat.com/ubi9/ubi-minimal:latest
-        command: ["/bin/sh", "-c"]
-        args:
-        - |
-          microdnf install -y iperf3
-          echo "Waiting for iperf-a service..."
-          until iperf3 -c iperf-a.${IPERF_NAMESPACE}.svc -p 5201 -t 1 >/dev/null 2>&1; do
-            sleep 5
-          done
-          echo "iperf-a reachable, starting continuous bidir traffic"
-          while true; do
-            iperf3 -c iperf-a.${IPERF_NAMESPACE}.svc -p 5201 --bidir -t 3600
-            sleep 1
-          done
-EOF
+    envsubst '${NODE_A} ${NODE_B} ${IPERF_NAMESPACE}' < "${STRESS_PROFILES_DIR}/iperf.yaml" | oc apply -f -
 
     log "INFO" "iperf Deployments created, waiting for pods to start"
     retry 12 10 oc -n "${IPERF_NAMESPACE}" wait --for=condition=Available deployment/iperf-a deployment/iperf-b --timeout=10s
@@ -377,7 +166,6 @@ setup() {
 # ---- kube-burner-ocp stress run ----
 
 STRESS_DURATION="${STRESS_DURATION:-24h}"
-STRESS_PROFILES_DIR="${SCRIPT_DIR}/../manifests/stress"
 OPENSEARCH_URL="${OPENSEARCH_URL:-}"
 STRESS_PODS_PER_NODE="${STRESS_PODS_PER_NODE:-64}"
 STRESS_CHURN_PERCENT="${STRESS_CHURN_PERCENT:-50}"
@@ -390,22 +178,7 @@ ensure_thanos_nodeport() {
         log "INFO" "thanos-querier-nodeport already exists" >&2
     else
         log "INFO" "Creating thanos-querier-nodeport service" >&2
-        hosted_oc apply -f - <<'EOF'
-apiVersion: v1
-kind: Service
-metadata:
-  name: thanos-querier-nodeport
-  namespace: openshift-monitoring
-spec:
-  type: NodePort
-  selector:
-    app.kubernetes.io/name: thanos-query
-  ports:
-  - name: https
-    port: 9091
-    targetPort: web
-    protocol: TCP
-EOF
+        hosted_oc apply -f "${STRESS_PROFILES_DIR}/thanos-querier-nodeport.yaml"
     fi
 
     local nodeport
@@ -454,25 +227,23 @@ duration_to_hours() {
 }
 
 generate_metrics_endpoint() {
-    local mgmt_token="$1"
-    local hosted_token="$2"
-    local hosted_endpoint="$3"
-    local output_file="$4"
+    local output_file="$1"
 
-    local mgmt_endpoint="https://prometheus-k8s-openshift-monitoring.apps.${CLUSTER_NAME}.${BASE_DOMAIN}"
+    export MGMT_ENDPOINT="https://prometheus-k8s-openshift-monitoring.apps.${CLUSTER_NAME}.${BASE_DOMAIN}"
+    export MGMT_TOKEN HOSTED_TOKEN HOSTED_ENDPOINT STRESS_PROFILES_DIR
 
-    local metrics_mgmt="" metrics_hosted="" indexer_mgmt="" indexer_hosted=""
+    export METRICS_MGMT="" METRICS_HOSTED="" INDEXER_MGMT="" INDEXER_HOSTED=""
     if [[ -n "${OPENSEARCH_URL}" ]]; then
-        metrics_mgmt="  metrics:
+        METRICS_MGMT="  metrics:
     - ${STRESS_PROFILES_DIR}/metrics-report.yml"
-        metrics_hosted="  metrics:
+        METRICS_HOSTED="  metrics:
     - ${STRESS_PROFILES_DIR}/metrics-report-hosted.yml"
-        indexer_mgmt="  indexer:
+        INDEXER_MGMT="  indexer:
     esServers: [\"${OPENSEARCH_URL}\"]
     insecureSkipVerify: true
     defaultIndex: kube-burner-ocp-mgmt
     type: opensearch"
-        indexer_hosted="  indexer:
+        INDEXER_HOSTED="  indexer:
     esServers: [\"${OPENSEARCH_URL}\"]
     insecureSkipVerify: true
     defaultIndex: kube-burner-ocp-hosted
@@ -480,25 +251,8 @@ generate_metrics_endpoint() {
     fi
 
     umask 077
-    cat > "${output_file}" <<EOF
-# Management cluster Prometheus (alerts + metrics collection)
-- endpoint: ${mgmt_endpoint}
-  token: ${mgmt_token}
-  skipTLSVerify: true
-${metrics_mgmt}
-  alerts:
-    - ${STRESS_PROFILES_DIR}/alerts.yml
-${indexer_mgmt}
-
-# Hosted cluster thanos-querier via NodePort (metrics + alerts)
-- endpoint: ${hosted_endpoint}
-  token: ${hosted_token}
-  skipTLSVerify: true
-${metrics_hosted}
-  alerts:
-    - ${STRESS_PROFILES_DIR}/alerts.yml
-${indexer_hosted}
-EOF
+    envsubst '${MGMT_ENDPOINT} ${MGMT_TOKEN} ${HOSTED_TOKEN} ${HOSTED_ENDPOINT} ${STRESS_PROFILES_DIR} ${METRICS_MGMT} ${METRICS_HOSTED} ${INDEXER_MGMT} ${INDEXER_HOSTED}' \
+        < "${STRESS_PROFILES_DIR}/metrics-endpoint.yaml.template" > "${output_file}"
 
     log "INFO" "Generated metrics-endpoint file: ${output_file}"
 }
@@ -559,8 +313,8 @@ run_stress() {
         log "ERROR" "Could not determine hosted cluster node IP"
         return 1
     fi
-    local hosted_endpoint="https://${node_ip}:${nodeport}"
-    log "INFO" "Hosted Prometheus endpoint: ${hosted_endpoint}"
+    HOSTED_ENDPOINT="https://${node_ip}:${nodeport}"
+    log "INFO" "Hosted Prometheus endpoint: ${HOSTED_ENDPOINT}"
 
     # Safety window: churn duration + 24h for pod creation/teardown, metrics indexing, and token validity
     local churn_hours
@@ -573,18 +327,17 @@ run_stress() {
 
     local tokens
     tokens=$(generate_tokens "${safety_window}")
-    local mgmt_token hosted_token
-    mgmt_token=$(echo "${tokens}" | cut -d' ' -f1)
-    hosted_token=$(echo "${tokens}" | cut -d' ' -f2)
+    MGMT_TOKEN=$(echo "${tokens}" | cut -d' ' -f1)
+    HOSTED_TOKEN=$(echo "${tokens}" | cut -d' ' -f2)
 
-    if [[ -z "${mgmt_token}" || -z "${hosted_token}" ]]; then
+    if [[ -z "${MGMT_TOKEN}" || -z "${HOSTED_TOKEN}" ]]; then
         log "ERROR" "Failed to generate one or both tokens"
         return 1
     fi
     log "INFO" "Tokens and timeout window: ${safety_window} (churn duration + 24h)"
 
     # Generate metrics-endpoint.yaml (contains tokens and credentials)
-    generate_metrics_endpoint "${mgmt_token}" "${hosted_token}" "${hosted_endpoint}" "${_run_metrics_file}"
+    generate_metrics_endpoint "${_run_metrics_file}"
 
     # Run kube-burner-ocp
     log "INFO" "Running kube-burner-ocp node-density-cni"

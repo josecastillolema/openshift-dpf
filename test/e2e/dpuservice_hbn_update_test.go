@@ -45,15 +45,6 @@ func generateHBNBGPPeerGroup(original string) string {
 	return fmt.Sprintf("%s-test-%s", original, rand.String(5))
 }
 
-// scaleWorkloadReplicas rewrites the hard-coded "replicas: 2" for the
-// per-DPU-host workload Deployments (sriov-test-worker and
-// sriov-test-worker-hostnetwork) in the workload manifest to match the given
-// DPU-enabled host node count. The sriov-test-master Deployment uses
-// "replicas: 1" and is left untouched.
-func scaleWorkloadReplicas(manifestBytes []byte, nodeCount int) []byte {
-	return []byte(strings.ReplaceAll(string(manifestBytes), "replicas: 2", fmt.Sprintf("replicas: %d", nodeCount)))
-}
-
 // TC-SVC-001: Update HBN DPUService
 //
 // Reconfigures the HBN DPUService via a one-time DPUServiceConfiguration

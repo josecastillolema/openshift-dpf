@@ -34,7 +34,9 @@ var _ = Describe("Sanity Tests", Label("sanity"), Ordered, func() {
 	Describe("Workload Setup", Ordered, func() {
 		It("should deploy workload pods", func() {
 			By("Applying workload manifests to management cluster")
-			err := utils.ApplyManifests(ctx, mgmtClient, manifests.WorkloadManifestBytes())
+			Expect(dpuHostWorkers).NotTo(BeEmpty(), "no DPU-enabled host workers available for workloads")
+			workload := scaleWorkloadReplicas(manifests.WorkloadManifestBytes(), len(dpuHostWorkers))
+			err := utils.ApplyManifests(ctx, mgmtClient, workload)
 			Expect(err).NotTo(HaveOccurred(), "failed to apply workload manifests")
 
 			By("Waiting for all workload deployments to be ready")

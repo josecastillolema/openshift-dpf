@@ -31,3 +31,8 @@ COPY . .
 # Make workspace writable for OpenShift's arbitrary user IDs
 # Note: SSH keys should NOT be in the image - they're mounted at runtime from secrets
 RUN chmod 777 /root/dpf-ci -R
+
+# Provide subuid/subgid ranges for UID 1000 (OpenShift's arbitrary UID) so
+# rootless podman can map non-root users inside container images.
+RUN echo "1000:100000:65536" >> /etc/subuid && \
+    echo "1000:100000:65536" >> /etc/subgid

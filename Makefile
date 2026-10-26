@@ -64,7 +64,8 @@ all-zt:
 
 # Zero Trust installation through DPU services and authorization.
 # Host worker/BMO provisioning, OVN injection, Kata, and trusted verification
-# are deliberately excluded.
+# are deliberately excluded. With VERIFY_DEPLOYMENT=true it ends by waiting for
+# every listed DPU to be Ready and the cluster operators to be stable.
 ZT_ALL_STEPS := validate-zt-mode verify-files check-cluster create-vms prepare-manifests cluster-install update-etc-hosts kubeconfig poweron-workers deploy-dpf prepare-dpu-files deploy-dpu-services deploy-zt-dpu-services
 
 .NOTPARALLEL: _all-zt
@@ -74,6 +75,7 @@ _all-zt: $(ZT_ALL_STEPS)
 	@echo "================================================================================"
 	@echo "Zero Trust DPF, hosted-cluster, and DPU service configuration complete"
 	@echo "================================================================================"
+	@$(VERIFY_SCRIPT) verify-zt-deployment
 
 .PHONY: validate-zt-mode
 validate-zt-mode:
@@ -260,6 +262,7 @@ scale-out-zt-dpus: validate-zt-mode prepare-dpf-manifests
 	@$(POST_INSTALL_SCRIPT) prepare-zt-services
 	@$(POST_INSTALL_SCRIPT) update-zt-hbn-config
 	@$(POST_INSTALL_SCRIPT) print-zt-provisioning-instructions
+	@$(VERIFY_SCRIPT) verify-zt-deployment
 
 .PHONY: scale-in-zt-dpus
 scale-in-zt-dpus: validate-zt-mode
@@ -508,6 +511,10 @@ dump-system-status:
 verify-deployment:
 	@VERIFY_DEPLOYMENT=true $(VERIFY_SCRIPT) verify-deployment
 
+.PHONY: verify-zt-deployment
+verify-zt-deployment:
+	@VERIFY_DEPLOYMENT=true $(VERIFY_SCRIPT) verify-zt-deployment
+
 .PHONY: verify-workers
 verify-workers:
 	@$(VERIFY_SCRIPT) verify-workers
@@ -617,6 +624,7 @@ help:
 	@echo ""
 	@echo "Verification:"
 	@echo "  verify-deployment     - Full verification: workers + DPU nodes + DPUDeployment"
+	@echo "  verify-zt-deployment  - Zero Trust: listed DPUs and their hosted Nodes + DPUDeployment + stable operators"
 	@echo "  verify-workers        - Wait for worker nodes to be Ready in host cluster"
 	@echo "  verify-dpu-nodes      - Wait for DPU nodes to be Ready in DPUCluster"
 	@echo "  verify-dpudeployment  - Wait for DPUDeployment to be Ready"

@@ -7,6 +7,11 @@
 # 3. DPU worker nodes are Ready on the hosted cluster
 # 4. Management (host) cluster worker nodes are Ready
 # 5. DPUDeployment is Ready
+#
+# Zero Trust (verify-zt-deployment) has no host workers and verifies:
+# 1. Every DPU listed in WORKER_<N>_DPU_BMC_IPS is Ready and its hosted Node is Ready
+# 2. DPUDeployment is Ready
+# 3. Management and hosted cluster operators are stable
 
 set -e
 set -o pipefail
@@ -27,6 +32,12 @@ VERIFY_DEPLOYMENT_STEPS=(
     verify_dpu_nodes
     verify_worker_nodes
     verify_dpudeployment
+    verify_management_cluster_stable
+    verify_hosted_cluster_stable
+)
+VERIFY_ZT_DEPLOYMENT_STEPS=(
+    verify_zt_dpus
+    verify_zt_dpudeployment
     verify_management_cluster_stable
     verify_hosted_cluster_stable
 )
@@ -58,7 +69,7 @@ _verify_step_passed() {
 
 _verify_print_summary() {
     local step
-    for step in "${VERIFY_DEPLOYMENT_STEPS[@]}"; do
+    for step in "$@"; do
         if _verify_step_failed "$step"; then
             log "ERROR" "  FAILED: ${step}"
         elif _verify_step_passed "$step"; then
@@ -148,6 +159,45 @@ check_dpudeployment_ready() {
         -o jsonpath='{.status.conditions[?(@.type=="Ready")].status}' 2>/dev/null || echo "")
     echo "DPUDeployment Ready=${ready_status}"
     [[ "$ready_status" == "True" ]]
+}
+
+# Print the state of every DPU listed in WORKER_<N>_DPU_BMC_IPS. Succeeds when
+# each DPU is in phase Ready and its hosted Node, which has the DPU's name, is Ready.
+check_zt_dpus_ready() {
+    local namespace="${1:-$DPF_OPERATOR_NAMESPACE}"
+    local devices dpus nodes host bmc_ip device dpu phase node_ready
+    local not_ready=0
+
+    devices=$(oc get dpudevices.provisioning.dpu.nvidia.com -n "$namespace" -o json 2>/dev/null) || return 1
+    dpus=$(oc get dpus.provisioning.dpu.nvidia.com -n "$namespace" -o json 2>/dev/null) || return 1
+    nodes=$(KUBECONFIG="$HOSTED_KUBECONFIG" oc get nodes -o json 2>/dev/null) || nodes='{"items":[]}'
+
+    while IFS= read -r host; do
+        while IFS= read -r bmc_ip; do
+            device=$(jq -r --arg ip "$bmc_ip" \
+                '[.items[] | select(.spec.bmcIp == $ip) | .metadata.name] | if length == 1 then .[0] else "" end' <<< "$devices")
+            dpu=$(jq -r --arg d "$device" \
+                'first(.items[] | select($d != "" and .spec.dpuDeviceName == $d) | .metadata.name) // ""' <<< "$dpus")
+            phase=$(jq -r --arg n "$dpu" \
+                'first(.items[] | select(.metadata.name == $n) | .status.phase) // "none"' <<< "$dpus")
+            node_ready=$(jq -r --arg n "$dpu" \
+                'first(.items[] | select(.metadata.name == $n) | .status.conditions[]? | select(.type == "Ready") | .status) // "missing"' <<< "$nodes")
+            echo "WORKER_${host} DPU BMC ${bmc_ip}: DPU ${dpu:-missing}, phase ${phase}, hosted Node Ready=${node_ready}"
+            [[ "$phase" == "Ready" && "$node_ready" == "True" ]] || not_ready=1
+        done < <(list_zero_trust_host_dpu_bmc_ips "$host")
+    done < <(list_zero_trust_dpu_hosts)
+
+    return "$not_ready"
+}
+
+# Print the phase and the conditions that are not True of every DPU that is not Ready.
+_print_zt_dpu_conditions() {
+    local namespace="${1:-$DPF_OPERATOR_NAMESPACE}"
+    oc get dpus.provisioning.dpu.nvidia.com -n "$namespace" -o json 2>/dev/null \
+        | jq -r '.items[] | select(.status.phase != "Ready")
+            | "DPU \(.metadata.name): phase \(.status.phase)",
+              (.status.conditions[]? | select(.status != "True")
+                | "  \(.type)=\(.status) \(.reason // ""): \(.message // "")")' || true
 }
 
 # Run one verification function; dump cluster state and stop the pipeline on failure.
@@ -278,6 +328,42 @@ verify_dpu_objects() {
     return 1
 }
 
+verify_zt_dpus() {
+    log "INFO" "=== Zero Trust DPUs (DPU objects and hosted cluster Nodes) ==="
+
+    ensure_hosted_kubeconfig
+    local rc=$?
+    if [[ $rc -eq 1 ]]; then
+        log "ERROR" "Hosted cluster kubeconfig not available; cannot verify the DPU Nodes"
+        return 1
+    elif [[ $rc -ne 0 ]]; then
+        return 1
+    fi
+
+    log "INFO" "Waiting for every DPU in WORKER_<N>_DPU_BMC_IPS to reach phase Ready and join the hosted cluster"
+
+    if _verify_retry "$VERIFY_MAX_RETRIES" "$VERIFY_SLEEP_SECONDS" \
+        check_zt_dpus_ready "$DPF_OPERATOR_NAMESPACE"; then
+        log "INFO" "All listed DPUs are Ready"
+        oc get dpu -n "$DPF_OPERATOR_NAMESPACE"
+        return 0
+    fi
+
+    log "ERROR" "Timed out waiting for the listed DPUs"
+    check_zt_dpus_ready "$DPF_OPERATOR_NAMESPACE" || true
+    _print_zt_dpu_conditions "$DPF_OPERATOR_NAMESPACE"
+    return 1
+}
+
+# Zero Trust always creates the DPUDeployment, so a missing one fails instead of skipping.
+verify_zt_dpudeployment() {
+    if ! oc get dpudeployment -n "$DPF_OPERATOR_NAMESPACE" "$DPU_DEPLOYMENT_NAME" &>/dev/null; then
+        log "ERROR" "DPUDeployment ${DPU_DEPLOYMENT_NAME} not found in ${DPF_OPERATOR_NAMESPACE}"
+        return 1
+    fi
+    verify_dpudeployment
+}
+
 verify_dpudeployment() {
     log "INFO" "=== DPUDeployment ==="
     if ! oc get dpudeployment -n "$DPF_OPERATOR_NAMESPACE" "$DPU_DEPLOYMENT_NAME" &>/dev/null; then
@@ -331,6 +417,24 @@ verify_deployment() {
         return 0
     fi
 
+    _verify_run_steps "${VERIFY_DEPLOYMENT_STEPS[@]}"
+}
+
+verify_zt_deployment() {
+    if [[ "${DPF_DEPLOYMENT_MODE}" != "zero-trust" ]]; then
+        log "ERROR" "Zero Trust verification requires DPF_DEPLOYMENT_MODE=zero-trust"
+        return 1
+    fi
+    if [[ "${VERIFY_DEPLOYMENT}" != "true" ]]; then
+        log "INFO" "VERIFY_DEPLOYMENT is not set to true, skipping verification"
+        log "INFO" "Run 'make verify-zt-deployment' or set VERIFY_DEPLOYMENT=true in .env"
+        return 0
+    fi
+
+    _verify_run_steps "${VERIFY_ZT_DEPLOYMENT_STEPS[@]}"
+}
+
+_verify_run_steps() {
     VERIFY_FAILED_STEPS=()
     VERIFY_PASSED_STEPS=()
 
@@ -340,13 +444,13 @@ verify_deployment() {
     log "INFO" "================================================================================"
 
     local step
-    for step in "${VERIFY_DEPLOYMENT_STEPS[@]}"; do
+    for step in "$@"; do
         verify_invoke "$step" || break
     done
 
     log "INFO" "================================================================================"
     log "INFO" "Verification summary:"
-    _verify_print_summary
+    _verify_print_summary "$@"
     if [[ ${#VERIFY_FAILED_STEPS[@]} -eq 0 ]]; then
         log "INFO" "================================================================================"
         return 0
@@ -368,8 +472,9 @@ if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
         verify-dpu-objects)   verify_dpu_objects ;;
         verify-dpudeployment) verify_dpudeployment ;;
         verify-deployment)    verify_deployment ;;
+        verify-zt-deployment) verify_zt_deployment ;;
         *)
-            echo "Usage: $0 {verify-workers-joined|verify-workers|verify-dpu-nodes|verify-dpu-objects|verify-dpudeployment|verify-deployment}"
+            echo "Usage: $0 {verify-workers-joined|verify-workers|verify-dpu-nodes|verify-dpu-objects|verify-dpudeployment|verify-deployment|verify-zt-deployment}"
             exit 1
             ;;
     esac

@@ -87,6 +87,15 @@ physical host BMC: `dpu-node-worker-<N>` uses the `WORKER_<N>_BMC_*` values.
 `PowerCycle` uses `chassis power cycle`; the warm-reset methods use
 `chassis power reset`; and `NoAction` exits without contacting the BMC.
 
+With `VERIFY_DEPLOYMENT=true`, `make all-zt` and `make scale-out-zt-dpus` end
+by waiting for every DPU listed in `WORKER_<N>_DPU_BMC_IPS` to reach phase
+`Ready` and join the hosted cluster as a Ready Node, for the DPUDeployment to
+be Ready, and for the management and hosted cluster operators to be stable.
+The DPU and DPUDeployment waits are `VERIFY_MAX_RETRIES` x
+`VERIFY_SLEEP_SECONDS` each (30 minutes by default). On timeout it prints each
+DPU's phase and failing conditions, and the target fails. Run
+`make verify-zt-deployment` to check an existing deployment.
+
 ### Scaling Out Zero Trust DPUs
 
 Add `WORKER_<N>_DPU_BMC_IPS` for each new host to the inputs used to generate

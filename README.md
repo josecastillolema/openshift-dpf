@@ -36,22 +36,14 @@ This handles the complete deployment lifecycle:
 
 ### Zero Trust DPU BMC Prerequisites
 
+DPF enables RShim on the DPU BMC during provisioning. If you need it for
+debugging later, enable it manually on that DPU BMC after provisioning.
+
 Complete these manual steps on every DPU BMC before running `make all-zt`:
 
 1. Configure the same `root` password on every DPU BMC. Set
    `ZT_DPU_BMC_ROOT_PASSWORD` to this password when generating `.env`.
-2. Enable and start the `rshim` service on every DPU BMC:
-
-   ```bash
-   ssh root@<DPU_BMC_IP>
-   systemctl enable rshim
-   systemctl start rshim
-   systemctl is-enabled rshim
-   systemctl is-active rshim
-   ```
-
-   The last two commands must report `enabled` and `active`.
-3. Verify that the BMC Redfish endpoint is reachable. This command prompts for
+2. Verify that the BMC Redfish endpoint is reachable. This command prompts for
    the shared `root` password instead of putting it in the shell history:
 
    ```bash

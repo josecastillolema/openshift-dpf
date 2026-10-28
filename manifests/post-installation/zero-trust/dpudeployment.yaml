@@ -23,7 +23,7 @@ spec:
       serviceConfiguration: hbn
   serviceChains:
     switches:
-      - serviceMTU: 9000
+      - serviceMTU: <NODES_MTU>
         ports:
           - serviceInterface:
               matchLabels:
@@ -31,7 +31,7 @@ spec:
           - service:
               name: hbn
               interface: p0_if
-      - serviceMTU: 9000
+      - serviceMTU: <NODES_MTU>
         ports:
           - serviceInterface:
               matchLabels:
@@ -39,7 +39,7 @@ spec:
           - service:
               name: hbn
               interface: p1_if
-      - serviceMTU: 9000
+      - serviceMTU: <NODES_MTU>
         ports:
           - serviceInterface:
               matchLabels:

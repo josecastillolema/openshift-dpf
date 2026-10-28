@@ -424,10 +424,6 @@ validate_zero_trust_mode() {
         echo "ERROR: Zero Trust validation requires DPF_DEPLOYMENT_MODE=zero-trust" >&2
         return 1
     fi
-    if [ "${NODES_MTU:-}" != "9000" ]; then
-        echo "ERROR: all-zt requires NODES_MTU=9000" >&2
-        return 1
-    fi
     if [ "${HYPERSHIFT_INSTALL_METHOD:-}" != "binary" ]; then
         echo "ERROR: Zero Trust installation requires HYPERSHIFT_INSTALL_METHOD=binary" >&2
         return 1

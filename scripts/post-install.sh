@@ -57,7 +57,8 @@ function prepare_zero_trust_provisioning_manifests() {
 
     update_file_multi_replace \
         "${ZERO_TRUST_POST_INSTALL_DIR}/dpudeployment.yaml" \
-        "${GENERATED_POST_INSTALL_DIR}/dpudeployment.yaml"
+        "${GENERATED_POST_INSTALL_DIR}/dpudeployment.yaml" \
+        "<NODES_MTU>" "${NODES_MTU}"
 
     log [INFO] "Zero Trust provisioning manifests prepared successfully"
 }

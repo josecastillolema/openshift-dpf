@@ -60,7 +60,7 @@ create-base-cluster: verify-files check-cluster create-vms prepare-manifests clu
 .PHONY: all-zt
 all-zt:
 	@mkdir -p logs
-	@bash -o pipefail -c '$(MAKE) _all-zt DPF_DEPLOYMENT_MODE=zero-trust NODES_MTU=9000 2>&1 | tee "logs/make_all_zt_$(shell date +%Y%m%d_%H%M%S).log"'
+	@bash -o pipefail -c '$(MAKE) _all-zt DPF_DEPLOYMENT_MODE=zero-trust 2>&1 | tee "logs/make_all_zt_$(shell date +%Y%m%d_%H%M%S).log"'
 
 # Zero Trust installation through DPU services and authorization.
 # Host worker/BMO provisioning, OVN injection, Kata, and trusted verification
@@ -689,7 +689,7 @@ help:
 	@echo ""
 	@echo "DPF Configuration:"
 	@echo "  DPF_DEPLOYMENT_MODE - Deployment profile: 'host-trusted' (default) or 'zero-trust'"
-	@echo "                        Zero Trust: make generate-env DPF_DEPLOYMENT_MODE=zero-trust NODES_MTU=9000"
+	@echo "                        Zero Trust: make generate-env DPF_DEPLOYMENT_MODE=zero-trust"
 	@echo "                        Zero Trust uses the HyperShift CLI, staticClusterManager, and Redfish"
 	@echo "  DPF_VERSION      - DPF operator version (default: $(DPF_VERSION))"
 	@echo "  KATA_ENABLED     - If true, make all runs enable-kata last (default: false)"

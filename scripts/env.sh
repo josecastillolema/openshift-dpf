@@ -154,6 +154,8 @@ _do_generate_env() {
 
     echo "Generating $output_file..."
     (
+        # The output holds BMC passwords.
+        umask 077
         set -a
         source "$defaults_file"
         set +a
@@ -163,6 +165,7 @@ _do_generate_env() {
             validate_zero_trust_mode
         fi
         envsubst < "$template_file" > "$output_file"
+        chmod 600 "$output_file"
 
         if [ "${DPF_DEPLOYMENT_MODE:-}" = "zero-trust" ]; then
             # Workers 1 and 2 are rendered by env.template; append higher-numbered hosts.

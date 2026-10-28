@@ -445,8 +445,9 @@ function get_kubeconfig() {
     echo "KUBECONFIG: $kubeconfig_path"
     if [ ! -f "$kubeconfig_path" ]; then
         log "INFO" "Downloading kubeconfig for $CLUSTER_NAME"
-        aicli download kubeconfig "$CLUSTER_NAME"
-        copy_error=$(cp "kubeconfig.$CLUSTER_NAME" "$kubeconfig_path" 2>&1) || true
+        (umask 077; aicli download kubeconfig "$CLUSTER_NAME")
+        chmod 600 "kubeconfig.$CLUSTER_NAME" 2>/dev/null || true
+        copy_error=$(umask 077; cp "kubeconfig.$CLUSTER_NAME" "$kubeconfig_path" 2>&1) || true
         log "INFO" "Kubeconfig downloaded to $KUBECONFIG"
     else
         log "INFO" "Using existing kubeconfig at: $KUBECONFIG"

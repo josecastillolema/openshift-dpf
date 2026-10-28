@@ -96,23 +96,6 @@ function deploy_metallb() {
     log [INFO] "Note: IPAddressPool and L2Advertisement will be managed by dpf-hcp-provisioner-operator"
 }
 
-function apply_scc() {
-    if [ "${DPF_DEPLOYMENT_MODE}" = "zero-trust" ]; then
-        log [INFO] "Granting the privileged SCC to the Zero Trust DPF default service account..."
-        oc adm policy add-scc-to-user privileged \
-            -z default \
-            -n dpf-operator-system
-        return
-    fi
-
-    local scc_file="$GENERATED_DIR/scc.yaml"
-    if [ -f "$scc_file" ]; then
-        log [INFO] "Applying SCC..."
-        apply_manifest "$scc_file"
-        sleep 5
-    fi
-}
-
 function apply_namespaces() {
     log [INFO] "Applying namespaces..."
     for file in "$GENERATED_DIR"/*-ns.yaml; do
@@ -493,8 +476,7 @@ function apply_remaining() {
 
         if [[ ! "$file" =~ .*(-ns)\.yaml$ && \
               ! "$file" =~ .*(-crd)\.yaml$ && \
-              "$file" != "$GENERATED_DIR/cert-manager-manifests.yaml" && \
-              "$file" != "$GENERATED_DIR/scc.yaml" ]]; then
+              "$file" != "$GENERATED_DIR/cert-manager-manifests.yaml" ]]; then
             retry 5 30 apply_manifest "$file" true
             if [[ "$file" =~ .*operator.*\.yaml$ ]]; then
                 log [INFO] "Waiting for operator resources..."
@@ -1007,7 +989,6 @@ function apply_dpf() {
     wait_for_pods "dpf-operator-system" "dpu.nvidia.com/component=dpf-operator-controller-manager" 60 5
     
     apply_remaining
-    apply_scc
     deploy_hosted_cluster
 
     wait_for_pods "dpf-operator-system" "dpu.nvidia.com/component=dpf-operator-controller-manager" 30 5

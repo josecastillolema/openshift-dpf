@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Report.SuiteDescription}} — test log</title>
+<style>
+:root { color-scheme: light; font: 15px/1.5 system-ui, sans-serif; color: #182432; background: #f4f6f8; }
+body { max-width: 1200px; margin: 32px auto; padding: 0 20px 48px; }
+h1 { margin-bottom: 4px; font-size: 28px; } h2 { font-size: 18px; margin: 0; }
+a { color: #125ca5; } .muted { color: #526474; } .banner { padding: 12px 16px; border-left: 5px solid #986900; background: #fff2ce; }
+.counts { display: flex; flex-wrap: wrap; gap: 12px; margin: 20px 0; }
+.counts span { border: 1px solid #ccd5dc; background: white; border-radius: 6px; padding: 10px 16px; }
+.counts b { font-size: 24px; margin-right: 6px; }
+.passed { color: #176736; } .failure, .failed, .panicked, .timedout, .interrupted, .aborted { color: #a32424; }
+input[name=state] { margin: 0 4px 0 14px; } label { cursor: pointer; }
+.case { background: white; border: 1px solid #d7dfe5; border-radius: 8px; margin-top: 18px; overflow: hidden; }
+.case > summary { padding: 16px; background: #eaf0f4; font-weight: 650; }
+summary { cursor: pointer; overflow-wrap: anywhere; }
+.spec { margin: 10px 14px; border: 1px solid #d7dfe5; border-radius: 5px; color: #182432; }
+.spec > summary { padding: 10px 12px; }
+.spec.failure { border-left: 5px solid #b72727; }
+.badge { font-size: 12px; font-weight: 750; text-transform: uppercase; margin-right: 10px; }
+.details { padding: 0 14px 14px; } .location { font: 12px/1.6 ui-monospace, monospace; overflow-wrap: anywhere; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f4f6f8; border: 1px solid #d7dfe5; border-radius: 4px; padding: 14px; font: 12px/1.6 ui-monospace, monospace; }
+#failures:checked ~ main .spec:not(.failure), #passed:checked ~ main .spec:not(.passed), #skipped:checked ~ main .spec:not(.skipped):not(.pending) { display: none; }
+#failures:checked ~ main .case:not(:has(.spec.failure)), #passed:checked ~ main .case:not(:has(.spec.passed)), #skipped:checked ~ main .case:not(:has(.spec.skipped, .spec.pending)) { display: none; }
+@media print { body { max-width: none; } input, label { display: none; } }
+</style>
+<header>
+<p class="muted">DPF · E2E execution log</p>
+<h1>{{.Report.SuiteDescription}}</h1>
+{{if not .Complete}}<p class="banner"><strong>INCOMPLETE SNAPSHOT</strong> — completed results only. The run may still be active or may have been interrupted.</p>
+{{else if .Report.SuiteSucceeded}}<p class="passed"><strong>Suite passed</strong></p>
+{{else}}<p class="failure"><strong>Suite failed</strong> — expand the failures and suite hooks below.</p>{{end}}
+<p class="muted">Started {{.Report.StartTime.Format "2006-01-02 15:04:05 MST"}} · Duration {{duration .Report.RunTime}}<br>
+{{if .Report.PreRunStats.TotalSpecs}}Selected {{.Report.PreRunStats.SpecsThatWillRun}} of {{.Report.PreRunStats.TotalSpecs}} specs · {{end}}Label filter: <code>{{if .Report.SuiteConfig.LabelFilter}}{{.Report.SuiteConfig.LabelFilter}}{{else}}all{{end}}</code> · Random seed: <code>{{.Report.SuiteConfig.RandomSeed}}</code></p>
+{{range .Report.SpecialSuiteFailureReasons}}<p class="banner">{{.}}</p>{{end}}
+<div class="counts">
+<span class="passed"><b>{{.Passed}}</b> passed</span><span class="failure"><b>{{.Failed}}</b> failed specs</span>
+<span><b>{{.Skipped}}</b> skipped / filtered</span><span><b>{{.Pending}}</b> pending</span>
+</div>
+<p class="muted">Counts cover test specs; setup and cleanup results appear separately below. Expand a test for its steps, failure location and captured output. Failure groups open first. Serial stdout/stderr remains in the original console log.</p>
+{{if .Complete}}<p><a href="report.json">Ginkgo JSON</a> · <a href="junit_e2e.xml">JUnit XML</a></p>{{end}}
+</header>
+<input type="radio" name="state" id="all" checked><label for="all">All results</label>
+<input type="radio" name="state" id="failures"><label for="failures">Failures</label>
+<input type="radio" name="state" id="passed"><label for="passed">Passed</label>
+<input type="radio" name="state" id="skipped"><label for="skipped">Skipped / pending</label>
+<main>
+{{range .Groups}}
+<details class="case" open>
+<summary>{{.Name}} <span class="muted">({{len .Specs}} results)</span></summary>
+{{range .Specs}}
+<details class="spec {{.Report.State}}{{if .Report.Failed}} failure{{end}}" {{if .Report.Failed}}open{{end}}>
+<summary><span class="badge {{.Report.State}}">{{.Report.State}}</span>{{if .Report.LeafNodeText}}{{.Report.LeafNodeText}}{{else}}{{.Report.LeafNodeType}}{{end}} <span class="muted">· {{duration .Report.RunTime}}</span></summary>
+<div class="details">
+<p>{{.Report.FullText}}</p>
+<p class="location">Test: {{.Report.LeafNodeLocation}}<br>Labels: {{join .Report.Labels ", "}}</p>
+{{if .Report.Failure.Message}}<p class="location">{{.Report.Failure.FailureNodeType}} · {{.Report.Failure.Location}}</p><pre>{{.Report.Failure.Message}}</pre>{{end}}
+<details {{if .Report.Failed}}open{{end}}><summary>Steps and captured output</summary><pre>{{.Output}}</pre></details>
+</div>
+</details>
+{{end}}
+</details>
+{{else}}<p>No completed tests have been reported yet.</p>{{end}}
+</main>
+</html>

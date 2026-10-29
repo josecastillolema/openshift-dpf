@@ -92,3 +92,20 @@ Before opening a change, confirm:
 - Generated resources and pods are verified by status and identity, not only by object names.
 - The test ends with a meaningful cluster-health assertion.
 - Formatting, compile-only tests, unit tests, vet, and `git diff --check` pass.
+
+
+## HTML execution logs
+
+Each Ginkgo run writes `${ARTIFACT_DIR}/e2e/report.html` (or `artifacts/e2e/report.html`
+at the repository root when ARTIFACT_DIR is unset). Open or download it from the
+Prow artifacts for a summary grouped by test case, expandable step timelines,
+labels, failure locations, and captured output. The status controls work without
+JavaScript or external assets. Captured output comes from GinkgoWriter; serial
+stdout/stderr remains in the original Prow/terminal log.
+
+The HTML is updated atomically after each completed spec. An interrupted run
+retains an explicitly incomplete snapshot; an active or hard-killed spec may not
+appear. During parallel runs, snapshots include process 1 only until Ginkgo
+aggregates the final result. A normally completed run also writes `report.json`
+and `junit_e2e.xml`, including suite setup and cleanup results. Report hooks do
+not change test selection, assertions, timeouts, or cluster cleanup.

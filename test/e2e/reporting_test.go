@@ -24,8 +24,11 @@ var _ = ReportBeforeSuite(func(report Report) {
 	executionReportDir, err = filepath.Abs(filepath.Join(base, "e2e"))
 	Expect(err).NotTo(HaveOccurred())
 	executionReport = report
-	Expect(reporting.WriteHTML(filepath.Join(executionReportDir, "report.html"), report, false)).To(Succeed())
-	fmt.Fprintf(GinkgoWriter, "E2E HTML log: %s\n", filepath.Join(executionReportDir, "report.html"))
+	if err := reporting.WriteHTML(filepath.Join(executionReportDir, "report.html"), report, false); err != nil {
+		fmt.Fprintf(GinkgoWriter, "WARNING: writing initial E2E HTML log: %v\n", err)
+	} else {
+		fmt.Fprintf(GinkgoWriter, "E2E HTML log: %s\n", filepath.Join(executionReportDir, "report.html"))
+	}
 })
 
 var _ = ReportAfterEach(func(spec SpecReport) {
@@ -44,6 +47,13 @@ var _ = ReportAfterEach(func(spec SpecReport) {
 var _ = ReportAfterSuite("Write E2E execution reports", func(report Report) {
 	Expect(reporters.GenerateJSONReport(report, filepath.Join(executionReportDir, "report.json"))).To(Succeed())
 	Expect(reporters.GenerateJUnitReport(report, filepath.Join(executionReportDir, "junit_e2e.xml"))).To(Succeed())
-	Expect(reporting.WriteHTML(filepath.Join(executionReportDir, "report.html"), report, true)).To(Succeed())
+	complete := true
+	for _, reason := range report.SpecialSuiteFailureReasons {
+		if reason == "Interrupted by User" {
+			complete = false
+			break
+		}
+	}
+	Expect(reporting.WriteHTML(filepath.Join(executionReportDir, "report.html"), report, complete)).To(Succeed())
 	fmt.Printf("E2E reports: %s\n", executionReportDir)
 })

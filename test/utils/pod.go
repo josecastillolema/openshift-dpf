@@ -51,10 +51,10 @@ func ExecInPod(ctx context.Context, cfg *rest.Config, cs *kubernetes.Clientset, 
 	return &ExecResult{Stdout: stdout.String(), Stderr: stderr.String()}, nil
 }
 
-func PingFromPod(ctx context.Context, cfg *rest.Config, cs *kubernetes.Clientset, namespace, podName, containerName, destIP string, count, mtu int) error {
+func PingFromPod(ctx context.Context, cfg *rest.Config, cs *kubernetes.Clientset, namespace, podName, containerName, destIP string, count, payloadSize int) error {
 	cmd := []string{"ping", "-c", strconv.Itoa(count)}
-	if mtu > 0 {
-		cmd = append(cmd, "-M", "do", "-s", strconv.Itoa(mtu))
+	if payloadSize > 0 {
+		cmd = append(cmd, "-M", "do", "-s", strconv.Itoa(payloadSize))
 	}
 	cmd = append(cmd, destIP)
 

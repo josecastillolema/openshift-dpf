@@ -124,12 +124,12 @@ var _ = Describe("Sanity Tests", Label("sanity"), Ordered, func() {
 			}
 		})
 
-		It("should ping from each hostnetwork worker pod to its HBN pod (MTU 8970 jumbo)", func() {
+		It("should ping from each hostnetwork worker pod to its HBN pod with 8900-byte packets (jumbo)", func() {
 			for i, hnw := range workloadPods.HostNetWorkers {
-				By(fmt.Sprintf("Pinging from %s to HBN %s (IP=%s) MTU 8970", hnw.Name, hbnPods[i].Name, hbnPods[i].IP))
+				By(fmt.Sprintf("Pinging from %s to HBN %s (IP=%s) with 8872-byte payloads (8900-byte IPv4 packets)", hnw.Name, hbnPods[i].Name, hbnPods[i].IP))
 				err := utils.PingFromPod(ctx, mgmtConfig, mgmtClientset,
 					cfg.WorkloadNamespace, hnw.Name, "nginx",
-					hbnPods[i].IP, cfg.PingCount, 8970)
+					hbnPods[i].IP, cfg.PingCount, 8872)
 				Expect(err).NotTo(HaveOccurred())
 			}
 		})
